@@ -81,9 +81,21 @@ export function registerPollCommand(bot: Bot<MyContext>): void {
         );
       }
 
-      await ctx.reply(
-        '✅ Poll created! Forward it back to me to see voters or update the sheet.',
-      );
+      // In groups, delete the command message to keep chat clean
+      const isGroup =
+        ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+      if (isGroup) {
+        try {
+          await ctx.deleteMessage();
+        } catch {
+          // Bot might not have delete permission, ignore
+        }
+      } else {
+        // In private chat, send confirmation
+        await ctx.reply(
+          '✅ Poll created! Forward it back to me to see voters or update the sheet.',
+        );
+      }
     } catch (error) {
       console.error('Error creating poll:', error);
       await ctx.reply(
