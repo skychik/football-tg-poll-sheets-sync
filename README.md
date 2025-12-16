@@ -21,8 +21,12 @@ stateDiagram-v2
     state "Main Flow" as MainFlow {
         DetectColumn --> ConfirmColumn: Last column found
         DetectColumn --> AskNewColumn: No columns found
-        ConfirmColumn --> CheckMetadata: User confirms
-        ConfirmColumn --> AskNewColumn: User declines
+        ConfirmColumn --> CheckMetadata: User confirms (yes)
+        ConfirmColumn --> AskDateName: User declines (no)<br/>Create new column
+        ConfirmColumn --> CheckMetadata: User types column letter
+        ConfirmColumn --> ColumnSelection: User types date text<br/>Multiple matches
+        ConfirmColumn --> CheckMetadata: User types date text<br/>Single match
+        ColumnSelection --> CheckMetadata: User selects column
         AskNewColumn --> AskDateName: User confirms new column
         AskNewColumn --> [*]: User cancels
 
@@ -59,19 +63,26 @@ stateDiagram-v2
 
 **Main Flow:**
 1. **DetectColumn**: Bot auto-detects the last date column (starting from column F)
-2. **ConfirmColumn**: Asks user to confirm detected column or create new one
-3. **CheckMetadata**: Verifies date (row 1) and cost (row 2), asks if missing
-4. **AskUsernames**: User provides list of attending players' usernames (skipped if from poll)
-5. **CheckPlayerCount**: After matching usernames, checks if row 3 has player count
-6. **ConfirmPlayerCount**: If count missing, suggests the number of recognized usernames
-7. **CheckOverride**: Checks if any cells already have values
-8. **WriteData**: Writes zeros to the column for all matched usernames
+2. **ConfirmColumn**: Asks user to confirm detected column with options:
+   - "yes" - use detected column
+   - "no" - create new column (shows next column ID, e.g., "create new column H")
+   - Column letter (e.g., "F", "G") - select specific column
+   - Date text (e.g., "13 декабря") - search for matching column
+3. **ColumnSelection**: If date text search finds multiple matches, user selects from numbered list
+4. **CheckMetadata**: Verifies date (row 1) and cost (row 2), asks if missing
+5. **AskUsernames**: User provides list of attending players' usernames (skipped if from poll)
+6. **CheckPlayerCount**: After matching usernames, checks if row 3 has player count
+7. **ConfirmPlayerCount**: If count missing, suggests the number of recognized usernames
+8. **CheckOverride**: Checks if any cells already have values
+9. **WriteData**: Writes zeros to the column for all matched usernames
 
 ## Features
 
 - **Poll creation**: Create trackable non-anonymous polls with `/poll`
 - **Poll integration**: Forward polls back to extract voter usernames automatically
 - **Auto-detection**: Finds last date column in Google Sheets
+- **Flexible column selection**: Choose by column letter, search by date text, or create new column
+- **Multiple match handling**: When date text matches multiple columns, select from numbered list
 - **Metadata collection**: Prompts for missing date, cost, player count
 - **Username matching**: Matches usernames against Google Sheet (column B)
 - **Smart suggestions**: Suggests player count based on recognized usernames

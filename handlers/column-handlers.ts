@@ -36,10 +36,14 @@ export async function handleColumnConfirmation(
     if (answer === 'yes') {
       await proceedWithMetadataCollection(ctx);
     } else {
-      // Calculate next column
+      // Calculate next column and go directly to date name
       const nextColumn = getNextColumnLetter(ctx.session.targetColumn);
-      ctx.session.state = 'awaiting_new_column_choice';
-      await ctx.reply(`Create new column ${nextColumn}? (yes/no)`);
+      ctx.session.targetColumn = nextColumn;
+      ctx.session.isNewColumn = true;
+      ctx.session.state = 'awaiting_date_name';
+      await ctx.reply(
+        `📅 Please provide the date name for column ${nextColumn} (row 1):`,
+      );
     }
     return true;
   }
@@ -122,11 +126,9 @@ export async function handleNewColumnChoice(
   }
 
   if (answer === 'yes') {
-    // Calculate next column
+    // targetColumn is already set from workflow.ts
     if (!ctx.session.targetColumn) {
       ctx.session.targetColumn = SHEET_DATA_FIRST_COLUMN;
-    } else {
-      ctx.session.targetColumn = getNextColumnLetter(ctx.session.targetColumn);
     }
     ctx.session.isNewColumn = true;
     ctx.session.state = 'awaiting_date_name';

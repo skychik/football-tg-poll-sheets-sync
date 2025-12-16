@@ -9,7 +9,7 @@ import {
 } from './constants';
 import type { MyContext } from './session';
 import { resetSession } from './session';
-import { initSheetsClient } from './sheets';
+import { getNextColumnLetter, initSheetsClient } from './sheets';
 
 /**
  * Start the column detection flow
@@ -24,8 +24,7 @@ export async function startColumnDetectionFlow(ctx: MyContext): Promise<void> {
 
     if (!lastDateColumn) {
       await ctx.reply(
-        `❌ No date columns found. Starting from column ${SHEET_DATA_FIRST_COLUMN}.\n\n` +
-          'Would you like to create a new column? (yes/no)',
+        `❌ No date columns found. Create column ${SHEET_DATA_FIRST_COLUMN}? (yes/no)`,
       );
       ctx.session.state = 'awaiting_new_column_choice';
       ctx.session.targetColumn = SHEET_DATA_FIRST_COLUMN;
@@ -37,9 +36,13 @@ export async function startColumnDetectionFlow(ctx: MyContext): Promise<void> {
     ctx.session.targetColumn = lastDateColumn.column;
     ctx.session.state = 'awaiting_column_confirmation';
 
+    const nextColumn = getNextColumnLetter(lastDateColumn.column);
     await ctx.reply(
       `📅 I detected column ${lastDateColumn.column} (${lastDateColumn.date}).\n\n` +
-        `Update this column? (yes/no, column letter, or date text)`,
+        `Update this column?\n` +
+        `• yes - use column ${lastDateColumn.column}\n` +
+        `• no - create new column ${nextColumn}\n` +
+        `• or type a column letter (e.g., F) or date text to search`,
     );
   } catch (error) {
     await handleApiError(ctx, error, 'detecting column');
