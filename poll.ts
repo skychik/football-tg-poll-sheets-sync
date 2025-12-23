@@ -65,6 +65,7 @@ export function registerPollCommand(bot: Bot<MyContext>): void {
         options,
         {
           is_anonymous: false,
+          allows_multiple_answers: true
         },
       );
 
