@@ -6,6 +6,7 @@ import {
   MSG_USE_UPDATE_AGAIN,
   SHEET_DATA_FIRST_COLUMN,
 } from '../constants';
+import { columnSelectionKeyboard } from '../keyboards';
 import type { MyContext } from '../session';
 import { resetSession } from '../session';
 import { getNextColumnLetter, initSheetsClient } from '../sheets';
@@ -83,13 +84,11 @@ export async function handleColumnConfirmation(
         ctx.session.columnMatches = result.matches;
         ctx.session.state = 'awaiting_column_selection';
 
-        let message = `📋 Multiple columns found matching "${trimmedText}":\n\n`;
-        result.matches.forEach((match, index) => {
-          message += `${index + 1}. Column ${match.column}: ${match.date}\n`;
-        });
-        message += `\nPlease choose a column by typing its number (1-${result.matches.length}) or column letter:`;
+        const message = `📋 Multiple columns found matching "${trimmedText}":\n\nSelect one:`;
 
-        await ctx.reply(message);
+        await ctx.reply(message, {
+          reply_markup: columnSelectionKeyboard(result.matches),
+        });
         return true;
       }
 

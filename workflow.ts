@@ -7,6 +7,12 @@ import {
   ERR_TARGET_COLUMN_NOT_SET,
   SHEET_DATA_FIRST_COLUMN,
 } from './constants';
+import {
+  columnConfirmationKeyboard,
+  newColumnChoiceKeyboard,
+  overrideConfirmationKeyboard,
+  playerCountConfirmationKeyboard,
+} from './keyboards';
 import type { MyContext } from './session';
 import { resetSession } from './session';
 import { getNextColumnLetter, initSheetsClient } from './sheets';
@@ -24,7 +30,8 @@ export async function startColumnDetectionFlow(ctx: MyContext): Promise<void> {
 
     if (!lastDateColumn) {
       await ctx.reply(
-        `❌ No date columns found. Create column ${SHEET_DATA_FIRST_COLUMN}? (yes/no)`,
+        `❌ No date columns found. Create column ${SHEET_DATA_FIRST_COLUMN}?`,
+        { reply_markup: newColumnChoiceKeyboard(SHEET_DATA_FIRST_COLUMN) },
       );
       ctx.session.state = 'awaiting_new_column_choice';
       ctx.session.targetColumn = SHEET_DATA_FIRST_COLUMN;
@@ -39,10 +46,13 @@ export async function startColumnDetectionFlow(ctx: MyContext): Promise<void> {
     const nextColumn = getNextColumnLetter(lastDateColumn.column);
     await ctx.reply(
       `📅 I detected column ${lastDateColumn.column} (${lastDateColumn.date}).\n\n` +
-        `Update this column?\n` +
-        `• yes - use column ${lastDateColumn.column}\n` +
-        `• no - create new column ${nextColumn}\n` +
-        `• or type a column letter (e.g., F) or date text to search`,
+        `Choose an option below, or type a column letter (e.g., F) or date text to search:`,
+      {
+        reply_markup: columnConfirmationKeyboard(
+          lastDateColumn.column,
+          nextColumn,
+        ),
+      },
     );
   } catch (error) {
     await handleApiError(ctx, error, 'detecting column');
@@ -80,9 +90,9 @@ export async function checkOverridesAndWrite(
     existingValues.forEach((ev) => {
       message += `• ${ev.nickname}: ${ev.value}\n`;
     });
-    message += `\nOverwrite? (yes/no)`;
+    message += `\nWhat would you like to do?`;
 
-    await ctx.reply(message);
+    await ctx.reply(message, { reply_markup: overrideConfirmationKeyboard() });
   } else {
     await writeZerosAndRespond(ctx, nicknameRows, column, true, []);
   }
@@ -179,7 +189,8 @@ export async function proceedWithPlayerCountCheck(
       ctx.session.state = 'awaiting_player_count_confirmation';
       await ctx.reply(
         `👥 I found ${recognizedCount} recognized username(s).\n\n` +
-          `Is ${recognizedCount} the total number of players who attended? (yes/no)`,
+          `Is ${recognizedCount} the total number of players who attended?`,
+        { reply_markup: playerCountConfirmationKeyboard(recognizedCount) },
       );
       ctx.session.nicknameRowsEntries = Array.from(nicknameRows.entries());
       return;

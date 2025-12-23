@@ -4,6 +4,7 @@ import {
   getPollDataOrError,
   replyErrorAndReset,
 } from '../bot-helpers';
+import { pollIntentKeyboard, pollOptionKeyboard } from '../keyboards';
 import { activePolls } from '../poll';
 import type { MyContext } from '../session';
 import { resetSession } from '../session';
@@ -41,9 +42,8 @@ export function registerPollMessageHandler(bot: Bot<MyContext>): void {
 
     await ctx.reply(
       `📊 Poll: "${pollData.question}"\n\n${optionsText}\n` +
-        `What would you like to do?\n` +
-        `1. Update sheet with poll results\n` +
-        `2. View voters`,
+        `What would you like to do?`,
+      { reply_markup: pollIntentKeyboard() },
     );
   });
 }
@@ -69,8 +69,8 @@ export async function handlePollIntent(
     const optionsText = buildPollOptionsText(pollData);
 
     await ctx.reply(
-      `Which option contains the attending players?\n\n${optionsText}\n` +
-        `Reply with the option number (e.g., "1"):`,
+      `Which option contains the attending players?\n\n${optionsText}`,
+      { reply_markup: pollOptionKeyboard(pollData.options, pollData.votes) },
     );
     return true;
   }

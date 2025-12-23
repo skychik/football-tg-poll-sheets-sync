@@ -1,6 +1,7 @@
 import { Bot, session } from 'grammy';
 import { registerCommands } from './commands';
 import { registerMessageHandlers } from './handlers';
+import { registerCallbackHandlers } from './handlers/callback-handlers';
 import { registerPollAnswerHandler, registerPollCommand } from './poll';
 import type { MyContext, SessionData } from './session';
 
@@ -39,6 +40,7 @@ bot.use(
 registerCommands(bot);
 registerPollCommand(bot);
 registerPollAnswerHandler(bot);
+registerCallbackHandlers(bot);
 registerMessageHandlers(bot);
 
 // Error handling
