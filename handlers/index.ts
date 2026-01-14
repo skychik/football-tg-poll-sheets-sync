@@ -32,9 +32,12 @@ export function registerMessageHandlers(bot: Bot<MyContext>): void {
     const rawText = ctx.message.text.trim();
 
     // Try each handler in order - first match wins
-    // Poll handlers
+    // Poll handlers (allowed in groups)
     if (await handlePollIntent(ctx, text)) return;
     if (await handlePollOptionSelection(ctx, rawText)) return;
+
+    // Only process other handlers in private chats
+    if (ctx.chat.type !== 'private') return;
 
     // Column handlers
     if (await handleColumnConfirmation(ctx, text)) return;
