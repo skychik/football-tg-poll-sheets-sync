@@ -95,6 +95,7 @@ stateDiagram-v2
 - Telegram Bot Token (from [@BotFather](https://t.me/BotFather))
 - Google Cloud Project with Sheets API enabled
 - Service Account credentials for Google Sheets
+- Redis instance (required for poll persistence)
 
 ## Setup
 
@@ -155,9 +156,75 @@ GOOGLE_SERVICE_ACCOUNT_JSON_PATH=./path/to/service-account-key.json
 
 # Google Spreadsheet ID (already configured)
 SPREADSHEET_ID=1eX1xQF31-T2iGHTfFL3CZ1b-nVxOJKRqfvFCvGGGXGU
+
+# Redis (required)
+REDIS_URL=redis://localhost:6379
 ```
 
 **Note:** The `.env` file is already in `.gitignore` and won't be committed.
+
+### 5. Railway Redis Setup
+
+If you deploy on Railway:
+1. Add a **Redis** service to your project.
+2. Railway will provide the `REDIS_URL` variable automatically.
+3. Ensure your bot service has access to that `REDIS_URL`.
+
+The bot starts in strict mode for Redis: if `REDIS_URL` is missing or Redis is unreachable, startup fails. This prevents silent fallback to in-memory storage and guarantees poll data survives restarts/redeploys.
+
+### 6. Local Redis and Persistence Check
+
+Run Redis locally before starting the bot.
+
+Option A: Docker
+```bash
+docker run --name local-redis -p 6379:6379 redis:7
+```
+
+Option B: Homebrew
+```bash
+brew install redis
+brew services start redis
+```
+
+Quick connectivity check:
+```bash
+redis-cli -u redis://localhost:6379 ping
+```
+Expected output: `PONG`
+
+Check persistence end-to-end:
+1. Start the bot (`bun run dev`).
+2. Create a poll with `/poll ...`.
+3. Vote in the poll.
+4. Restart the bot.
+5. Forward the same poll to the bot again and verify voters are still available.
+
+Inspect stored poll keys and payload in Redis:
+```bash
+redis-cli -u redis://localhost:6379 keys "poll:*"
+redis-cli -u redis://localhost:6379 get "poll:<pollId>"
+```
+
+Redis UI (optional):
+
+`Redis Commander` is a web UI for browsing Redis keys and values in your browser.
+
+Install/run options:
+- Docker (recommended):
+```bash
+docker run --rm -p 8082:8081 \
+  -e REDIS_HOSTS=local:host.docker.internal:6379:0 \
+  rediscommander/redis-commander:latest
+```
+- Then open `http://localhost:8082`.
+
+Troubleshooting (macOS + Docker):
+- If Redis Commander shows `Status: reconnecting` but `redis-cli ... ping` returns `PONG`, use `host.docker.internal` as host (not `localhost`).
+- `localhost` inside the container points to the container itself, not your Mac host.
+
+Alternative UI:
+- `RedisInsight` (desktop app) can connect directly to `127.0.0.1:6379` without Docker networking.
 
 ## Usage
 

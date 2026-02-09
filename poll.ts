@@ -1,4 +1,9 @@
 import type { Bot } from 'grammy';
+import {
+  getPollData as getStoredPollData,
+  savePollData,
+  updatePollVotes,
+} from './redis';
 import type { MyContext } from './session';
 
 /**
@@ -10,8 +15,42 @@ export interface PollData {
   votes: Map<number, Set<string>>; // optionIndex -> Set of @usernames
 }
 
-// In-memory storage for active polls (keyed by poll ID)
-export const activePolls = new Map<string, PollData>();
+function serializeVotes(
+  votes: Map<number, Set<string>>,
+): Record<string, string[]> {
+  const serializedVotes: Record<string, string[]> = {};
+
+  for (const [optionIndex, voters] of votes.entries()) {
+    serializedVotes[String(optionIndex)] = Array.from(voters);
+  }
+
+  return serializedVotes;
+}
+
+function deserializeVotes(
+  serializedVotes: Record<string, string[]>,
+): Map<number, Set<string>> {
+  const votes = new Map<number, Set<string>>();
+
+  for (const [optionIndex, voters] of Object.entries(serializedVotes)) {
+    votes.set(Number(optionIndex), new Set(voters));
+  }
+
+  return votes;
+}
+
+export async function getPollById(pollId: string): Promise<PollData | null> {
+  const storedPollData = await getStoredPollData(pollId);
+  if (!storedPollData) {
+    return null;
+  }
+
+  return {
+    question: storedPollData.question,
+    options: storedPollData.options,
+    votes: deserializeVotes(storedPollData.votes),
+  };
+}
 
 /**
  * Register poll command handler
@@ -72,10 +111,10 @@ export function registerPollCommand(bot: Bot<MyContext>): void {
       // Store poll data
       const pollId = pollMessage.poll?.id;
       if (pollId) {
-        activePolls.set(pollId, {
+        await savePollData(pollId, {
           question,
           options,
-          votes: new Map(),
+          votes: {},
         });
         console.log(
           `[POLL CREATED] Poll ID: ${pollId}, Question: "${question}", Options: ${options.join(', ')}, Chat ID: ${ctx.chat.id}, User: @${ctx.from?.username || 'unknown'}`,
@@ -129,15 +168,11 @@ export function registerPollAnswerHandler(bot: Bot<MyContext>): void {
 
     const pollId = pollAnswer.poll_id;
     console.log('[POLL ANSWER HANDLER] Poll ID:', pollId);
-    console.log(
-      '[POLL ANSWER HANDLER] Active polls:',
-      Array.from(activePolls.keys()),
-    );
 
-    const pollData = activePolls.get(pollId);
+    const pollData = await getPollById(pollId);
     if (!pollData) {
       console.log(
-        `[POLL ANSWER HANDLER] Poll ID ${pollId} not found in activePolls, exiting`,
+        `[POLL ANSWER HANDLER] Poll ID ${pollId} not found in Redis, exiting`,
       );
       return; // Not our poll
     }
@@ -238,5 +273,7 @@ export function registerPollAnswerHandler(bot: Bot<MyContext>): void {
         '[POLL ANSWER HANDLER] No option_ids provided, user removed from all options',
       );
     }
+
+    await updatePollVotes(pollId, serializeVotes(pollData.votes));
   });
 }

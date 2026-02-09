@@ -3,6 +3,7 @@ import { registerCommands } from './commands';
 import { registerMessageHandlers } from './handlers';
 import { registerCallbackHandlers } from './handlers/callback-handlers';
 import { registerPollAnswerHandler, registerPollCommand } from './poll';
+import { ensureRedisReady } from './redis';
 import type { MyContext, SessionData } from './session';
 
 // Bun automatically loads .env files, so no additional setup needed
@@ -55,8 +56,8 @@ bot.catch((err) => {
 
 // Start bot
 console.log('🤖 Bot starting...');
-bot
-  .start()
+ensureRedisReady()
+  .then(() => bot.start())
   .then(() => {
     console.log('✅ Bot is running!');
   })

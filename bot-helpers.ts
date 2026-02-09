@@ -1,5 +1,5 @@
 import { ERR_SESSION_DATA_LOST } from './constants';
-import { activePolls, type PollData } from './poll';
+import { getPollById, type PollData } from './poll';
 import { type MyContext, resetSession } from './session';
 
 /**
@@ -95,7 +95,7 @@ export async function getPollDataOrError(
     return null;
   }
 
-  const pollData = activePolls.get(pollId);
+  const pollData = await getPollById(pollId);
   if (!pollData) {
     await replyErrorAndReset(ctx, '❌ Error: poll data not found.');
     return null;

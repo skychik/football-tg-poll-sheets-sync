@@ -5,7 +5,7 @@ import {
   replyErrorAndReset,
 } from '../bot-helpers';
 import { pollIntentKeyboard, pollOptionKeyboard } from '../keyboards';
-import { activePolls } from '../poll';
+import { getPollById } from '../poll';
 import type { MyContext } from '../session';
 import { resetSession } from '../session';
 import { startColumnDetectionFlow } from '../workflow';
@@ -19,7 +19,7 @@ export function registerPollMessageHandler(bot: Bot<MyContext>): void {
     if (!message.poll) return;
 
     const pollId = message.poll.id;
-    const pollData = activePolls.get(pollId);
+    const pollData = await getPollById(pollId);
 
     if (!pollData) {
       await ctx.reply(
