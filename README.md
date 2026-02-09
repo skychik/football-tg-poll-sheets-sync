@@ -1,38 +1,76 @@
 # Football Telegram Poll to Google Sheets Sync Bot
 
-Telegram bot that syncs poll results to Google Sheets. Accepts a list of player usernames and writes zeros to the specified column for attending players.
+Telegram bot that tracks poll voters and syncs attendee data to Google Sheets.
+It supports both manual updates and poll-driven updates, and persists poll state in Redis so data survives restarts and redeploys.
+
+## Features
+
+- Create non-anonymous, multi-answer polls with `/poll`
+- Track live voter changes via Telegram `poll_answer` updates
+- Persist poll state in Redis (`poll:{pollId}`)
+- Forward poll messages back to the bot to extract voters
+- Continue to column/date/cost/player-count workflow for Google Sheets updates
+- Protect existing values with confirmation before overwrite
+
+## Usage
+
+### Commands
+
+- `/start` - Show welcome/help text
+- `/poll` - Create trackable poll
+- `/update` - Start manual update workflow
+- `/help` - Show command help
+- `/cancel` or `/abort` - Cancel current operation
+
+### Typical flow
+
+1. Create poll with `/poll` and collect votes
+2. Forward that poll to the bot
+3. Choose:
+   - `1` to update sheet
+   - `2` to view voters
+4. If updating, select the option containing attendees
+5. Complete column/metadata prompts and write to sheet
+
+## Spreadsheet structure
+
+- Column `B`: Telegram usernames (for example `@almoga`)
+- Date columns start from `E+`
+- Player rows start from `7`
+
+Adjust constants in `constants.ts` if your sheet layout differs.
 
 ## Bot Conversation Flow
 
-The bot guides users through updating a Google Sheet column step by step. Here's the complete flow:
+The bot supports two entry points: `/update` (manual) and forwarded poll (poll-based).
 
 ```mermaid
 stateDiagram-v2
     [*] --> DetectColumn: /update or poll forwarded
 
-    state "Poll Flow" as PollFlow {
+    state PollFlow {
         ForwardPoll --> AskPollIntent: Poll recognized
         AskPollIntent --> ViewVoters: User chooses "2"
         AskPollIntent --> SelectOption: User chooses "1"
         SelectOption --> DetectColumn: Usernames extracted
-        ViewVoters --> [*]: Show voters, reset
+        ViewVoters --> [*]: Show voters and reset
     }
 
-    state "Main Flow" as MainFlow {
+    state MainFlow {
         DetectColumn --> ConfirmColumn: Last column found
         DetectColumn --> AskNewColumn: No columns found
-        ConfirmColumn --> CheckMetadata: User confirms (yes)
-        ConfirmColumn --> AskDateName: User declines (no)<br/>Create new column
+        ConfirmColumn --> CheckMetadata: User confirms detected column
+        ConfirmColumn --> AskDateName: User creates new column
         ConfirmColumn --> CheckMetadata: User types column letter
-        ConfirmColumn --> ColumnSelection: User types date text<br/>Multiple matches
-        ConfirmColumn --> CheckMetadata: User types date text<br/>Single match
-        ColumnSelection --> CheckMetadata: User selects column
-        AskNewColumn --> AskDateName: User confirms new column
+        ConfirmColumn --> ColumnSelection: Date text has multiple matches
+        ConfirmColumn --> CheckMetadata: Date text has one match
+        ColumnSelection --> CheckMetadata: User selects a match
+        AskNewColumn --> AskDateName: New column confirmed
         AskNewColumn --> [*]: User cancels
 
         CheckMetadata --> AskDateName: Date missing
-        CheckMetadata --> AskCost: Date exists, cost missing
-        CheckMetadata --> AskUsernames: All metadata exists
+        CheckMetadata --> AskCost: Cost missing
+        CheckMetadata --> AskUsernames: Metadata complete
         AskDateName --> CheckMetadata: Date saved
         AskCost --> CheckMetadata: Cost saved
 
@@ -46,236 +84,151 @@ stateDiagram-v2
         CheckOverride --> ConfirmOverride: Conflicts found
         CheckOverride --> WriteData: No conflicts
         ConfirmOverride --> WriteData: User decides
-        WriteData --> [*]: Done, reset
+        WriteData --> [*]: Done and reset
     }
 ```
 
-### Flow Explanation
+### Redis Data Flow
 
-**Entry Points:**
-- `/update` command - starts manual flow
-- Forward a poll created by `/poll` - starts poll-based flow
+This is the runtime architecture for poll creation, vote tracking, and forwarded poll processing.
 
-**Poll Flow:**
-1. **AskPollIntent**: User chooses to view voters or update sheet
-2. **SelectOption**: User selects which poll option contains attendees
-3. Usernames extracted automatically, continues to main flow
+```mermaid
+flowchart TD
+    telegramUser[Telegram_User]
+    botHandlers[Bot_Handlers]
+    redisStore[Redis_poll_pollId]
+    sheets[Google_Sheets]
 
-**Main Flow:**
-1. **DetectColumn**: Bot auto-detects the last date column (starting from column F)
-2. **ConfirmColumn**: Asks user to confirm detected column with options:
-   - "yes" - use detected column
-   - "no" - create new column (shows next column ID, e.g., "create new column H")
-   - Column letter (e.g., "F", "G") - select specific column
-   - Date text (e.g., "13 декабря") - search for matching column
-3. **ColumnSelection**: If date text search finds multiple matches, user selects from numbered list
-4. **CheckMetadata**: Verifies date (row 1) and cost (row 2), asks if missing
-5. **AskUsernames**: User provides list of attending players' usernames (skipped if from poll)
-6. **CheckPlayerCount**: After matching usernames, checks if row 3 has player count
-7. **ConfirmPlayerCount**: If count missing, suggests the number of recognized usernames
-8. **CheckOverride**: Checks if any cells already have values
-9. **WriteData**: Writes zeros to the column for all matched usernames
-
-## Features
-
-- **Poll creation**: Create trackable non-anonymous polls with `/poll`
-- **Poll integration**: Forward polls back to extract voter usernames automatically
-- **Auto-detection**: Finds last date column in Google Sheets
-- **Flexible column selection**: Choose by column letter, search by date text, or create new column
-- **Multiple match handling**: When date text matches multiple columns, select from numbered list
-- **Metadata collection**: Prompts for missing date, cost, player count
-- **Username matching**: Matches usernames against Google Sheet (column B)
-- **Smart suggestions**: Suggests player count based on recognized usernames
-- **Override protection**: Asks before overwriting existing values
-- **Zeros writing**: Writes zeros to specified columns for attending players
+    telegramUser -->|"/poll command"| botHandlers
+    botHandlers -->|"create poll metadata"| redisStore
+    telegramUser -->|"vote or change vote"| botHandlers
+    botHandlers -->|"update votes for pollId"| redisStore
+    telegramUser -->|"forward poll message"| botHandlers
+    botHandlers -->|"read pollId data"| redisStore
+    botHandlers -->|"selected attendees"| sheets
+```
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) runtime installed
-- Telegram Bot Token (from [@BotFather](https://t.me/BotFather))
-- Google Cloud Project with Sheets API enabled
-- Service Account credentials for Google Sheets
-- Redis instance (required for poll persistence)
+- [Bun](https://bun.sh)
+- Telegram bot token from [@BotFather](https://t.me/BotFather)
+- Google Cloud project with Google Sheets API enabled
+- Service account credentials with access to your spreadsheet
+- Redis instance (required)
 
 ## Setup
 
-### 1. Install Dependencies
+### 1) Install dependencies
 
 ```bash
 bun install
 ```
 
-### 2. Create Telegram Bot
+### 2) Create Telegram bot
 
 1. Open Telegram and message [@BotFather](https://t.me/BotFather)
-2. Send `/newbot` and follow instructions
-3. Copy the bot token you receive
+2. Run `/newbot`
+3. Save the bot token
 
-### 3. Set Up Google Sheets API
+### 3) Configure Google Sheets API
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project (or select existing)
-3. Enable **Google Sheets API**:
-   - Navigate to "APIs & Services" > "Library"
-   - Search for "Google Sheets API"
-   - Click "Enable"
-4. Create a Service Account:
-   - Go to "APIs & Services" > "Credentials"
-   - Click "Create Credentials" > "Service Account"
-   - Give it a name (e.g., "sheets-bot")
-   - Click "Create and Continue"
-   - Skip optional steps and click "Done"
-5. Create and download JSON key:
-   - Click on the created service account
-   - Go to "Keys" tab
-   - Click "Add Key" > "Create new key"
-   - Select "JSON" format
-   - Download the JSON file
-6. Share your spreadsheet with the service account:
-   - Open your Google Sheet, i.e. https://docs.google.com/spreadsheets/d/1eX1xQFB1-TJiGHTfFL3CZ1b-nVxOJKRqfvFCHGGGXGU
-   - Click "Share" button
-   - Add the service account email (found in the JSON file, looks like `xxx@xxx.iam.gserviceaccount.com`)
-   - Give it **Editor** access
-   - Click "Send"
+1. Open [Google Cloud Console](https://console.cloud.google.com/)
+2. Enable **Google Sheets API**
+3. Create a service account and JSON key
+4. Share your spreadsheet with the service account email as **Editor**
 
-### 4. Configure Environment Variables
+### 4) Configure environment variables
 
-Create a `.env` file in the project root:
+Create `.env` in the project root:
 
 ```bash
-# Telegram Bot Configuration
+# Telegram
 TELEGRAM_BOT_TOKEN=your_bot_token_here
 
-# Google Sheets Service Account Configuration
-# Option 1: Use JSON file path
+# Google Sheets service account (use one approach)
 GOOGLE_SERVICE_ACCOUNT_JSON_PATH=./path/to/service-account-key.json
-
-# Option 2: Use individual credentials (extract from JSON file)
 # GOOGLE_SERVICE_ACCOUNT_EMAIL=your-service-account@project.iam.gserviceaccount.com
 # GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 
-# Google Spreadsheet ID (already configured)
-SPREADSHEET_ID=1eX1xQF31-T2iGHTfFL3CZ1b-nVxOJKRqfvFCvGGGXGU
+# Spreadsheet
+SPREADSHEET_ID=1eX1xQF31-...
 
 # Redis (required)
 REDIS_URL=redis://localhost:6379
 ```
 
-**Note:** The `.env` file is already in `.gitignore` and won't be committed.
+### 5) Configure Redis on Railway
 
-### 5. Railway Redis Setup
+1. Add a Redis service in Railway
+2. Ensure your bot service receives `REDIS_URL`
 
-If you deploy on Railway:
-1. Add a **Redis** service to your project.
-2. Railway will provide the `REDIS_URL` variable automatically.
-3. Ensure your bot service has access to that `REDIS_URL`.
+This bot starts in strict Redis mode. If `REDIS_URL` is missing or Redis is unreachable, startup fails.
 
-The bot starts in strict mode for Redis: if `REDIS_URL` is missing or Redis is unreachable, startup fails. This prevents silent fallback to in-memory storage and guarantees poll data survives restarts/redeploys.
+## Run
 
-### 6. Local Redis and Persistence Check
+Start with auto-reload:
 
-Run Redis locally before starting the bot.
-
-Option A: Docker
 ```bash
-docker run --name local-redis -p 6379:6379 redis:7
+bun dev
 ```
 
-Option B: Homebrew
+## Verification
+
+### Local Redis startup
+
+Option A (Homebrew):
+
 ```bash
 brew install redis
 brew services start redis
 ```
 
-Quick connectivity check:
+Option B (Docker):
+
+```bash
+docker run --name local-redis -p 6379:6379 redis:7
+```
+
+Check connectivity:
+
 ```bash
 redis-cli -u redis://localhost:6379 ping
 ```
-Expected output: `PONG`
 
-Check persistence end-to-end:
-1. Start the bot (`bun run dev`).
-2. Create a poll with `/poll ...`.
-3. Vote in the poll.
-4. Restart the bot.
-5. Forward the same poll to the bot again and verify voters are still available.
+Expected result: `PONG`
 
-Inspect stored poll keys and payload in Redis:
+### Persistence check
+
+1. Start bot (`bun run dev`)
+2. Create a poll with `/poll go | Sat | Sun`
+3. Cast votes in Telegram
+4. Restart the bot
+5. Forward the same poll again and confirm voters are still available
+
+Inspect Redis data:
+
 ```bash
 redis-cli -u redis://localhost:6379 keys "poll:*"
 redis-cli -u redis://localhost:6379 get "poll:<pollId>"
 ```
 
-Redis UI (optional):
+### Optional Redis UI
 
-`Redis Commander` is a web UI for browsing Redis keys and values in your browser.
+`Redis Commander` is a browser UI for browsing keys and values.
 
-Install/run options:
-- Docker (recommended):
+Run with Docker:
+
 ```bash
 docker run --rm -p 8082:8081 \
   -e REDIS_HOSTS=local:host.docker.internal:6379:0 \
   rediscommander/redis-commander:latest
 ```
-- Then open `http://localhost:8082`.
 
-Troubleshooting (macOS + Docker):
-- If Redis Commander shows `Status: reconnecting` but `redis-cli ... ping` returns `PONG`, use `host.docker.internal` as host (not `localhost`).
-- `localhost` inside the container points to the container itself, not your Mac host.
+Open `http://localhost:8082`.
 
-Alternative UI:
-- `RedisInsight` (desktop app) can connect directly to `127.0.0.1:6379` without Docker networking.
+If you see `Status: reconnecting` on macOS while `redis-cli ... ping` returns `PONG`, use `host.docker.internal` instead of `localhost` for the Redis host.
 
-## Usage
-
-### Start the Bot
-
-```bash
-bun run index.ts
-```
-
-Or for development with auto-reload:
-
-```bash
-bun run dev
-```
-
-### Using the Bot
-
-1. Open Telegram and start a conversation with your bot
-2. Send `/start` to see instructions
-3. Send a list of usernames (with or without @, separated by spaces/commas):
-   ```
-   @user1 @user2 user3 @user4
-   ```
-4. Bot will confirm the parsed usernames
-5. Send the column letter (e.g., `O` or `AO`) where zeros should be written
-6. Bot will update the Google Sheet and report results
-
-### Commands
-
-- `/start` - Show welcome message and help
-- `/poll` - Create a trackable non-anonymous poll
-- `/update` - Start the sheet update workflow
-- `/help` - Show help message
-- `/cancel` or `/abort` - Cancel current operation
-
-**Tip:** Forward a poll created with `/poll` back to the bot to extract voters and update the sheet!
-
-## How It Works
-
-1. Bot parses usernames from your message (normalizes @ prefix)
-2. Reads column B from the Google Sheet (starting row 7) to find matching nicknames
-3. For each match, writes `0` to the cell at `[column][row]`
-4. Reports which usernames were found and updated, and which weren't found
-
-## Spreadsheet Structure
-
-- **Column B**: Contains Telegram nicknames (e.g., `@almoga`, `@aboukh`)
-- **Columns E+**: Date columns (e.g., "September 7", "December 13")
-- **Data starts from row 7**
-
-To change them, proceed to `constants.ts`
+Alternative: `RedisInsight` desktop app can connect directly to `127.0.0.1:6379`.
 
 ## License
 
