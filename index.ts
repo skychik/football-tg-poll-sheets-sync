@@ -1,63 +1,22 @@
-import { Bot, session } from 'grammy';
-import { registerCommands } from './commands';
-import { registerMessageHandlers } from './handlers';
-import { registerCallbackHandlers } from './handlers/callback-handlers';
-import { registerPollAnswerHandler, registerPollCommand } from './poll';
-import { ensureRedisReady } from './redis';
-import type { MyContext, SessionData } from './session';
+import { createBot } from './create-bot';
+import { createProductionServices } from './services';
+import { asTelegramApp } from './telegram-app';
 
 // Bun automatically loads .env files, so no additional setup needed
 
-// Initialize bot
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 if (!BOT_TOKEN) {
   throw new Error('TELEGRAM_BOT_TOKEN environment variable is required');
 }
 
-const bot = new Bot<MyContext>(BOT_TOKEN);
+const services = createProductionServices();
+const bot = createBot(BOT_TOKEN, undefined, services);
+const app = asTelegramApp(bot);
 
-// Session middleware
-bot.use(
-  session({
-    initial: (): SessionData => ({
-      state: 'idle',
-      usernames: [],
-      detectedColumn: undefined,
-      targetColumn: undefined,
-      isNewColumn: undefined,
-      dateName: undefined,
-      cost: undefined,
-      playerCount: undefined,
-      column: undefined,
-      nicknameRowsEntries: undefined,
-      existingValuesEntries: undefined,
-      pollId: undefined,
-      pollQuestion: undefined,
-    }),
-  }),
-);
-
-// Register all handlers
-registerCommands(bot);
-registerPollCommand(bot);
-registerPollAnswerHandler(bot);
-registerCallbackHandlers(bot);
-registerMessageHandlers(bot);
-
-// Error handling
-bot.catch((err) => {
-  const ctx = err.ctx;
-  console.error(`Error while handling update ${ctx.update.update_id}:`);
-  const e = err.error;
-  if (e instanceof Error) {
-    console.error('Error details:', e.message);
-  }
-});
-
-// Start bot
 console.log('🤖 Bot starting...');
-ensureRedisReady()
-  .then(() => bot.start())
+services.pollStorage
+  .ensureReady()
+  .then(() => app.start())
   .then(() => {
     console.log('✅ Bot is running!');
   })

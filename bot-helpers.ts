@@ -95,7 +95,7 @@ export async function getPollDataOrError(
     return null;
   }
 
-  const pollData = await getPollById(pollId);
+  const pollData = await getPollById(pollId, ctx.services.pollStorage);
   if (!pollData) {
     await replyErrorAndReset(ctx, '❌ Error: poll data not found.');
     return null;
