@@ -1,10 +1,21 @@
 import { Bot, type BotConfig, session } from 'grammy';
+import type { AppServices } from '../app-services';
+import type { MyContext, SessionData } from '../session';
+import { registerPollCallbackHandlers } from './callbacks/poll-callbacks';
+import { registerUpdateCallbackHandlers } from './callbacks/update-callbacks';
 import { registerCommands } from './commands';
-import { registerMessageHandlers } from './handlers';
-import { registerCallbackHandlers } from './handlers/callback-handlers';
-import { registerPollAnswerHandler, registerPollCommand } from './poll';
-import type { AppServices } from './services';
-import type { MyContext, SessionData } from './session';
+import { logIncomingMessage } from './log-incoming-message';
+import { registerMessageRouter } from './message-router';
+import { registerPollAnswerHandler } from './poll/answer-handler';
+
+/**
+ * Thin runtime surface for long-polling production (`handleUpdate` is only used in tests).
+ */
+export type TelegramApp = Pick<Bot<MyContext>, 'handleUpdate' | 'start'>;
+
+export function asTelegramApp(bot: Bot<MyContext>): TelegramApp {
+  return bot;
+}
 
 /**
  * Build the bot with all middleware and handlers. Does not call `start()`.
@@ -42,11 +53,16 @@ export function createBot(
     await next();
   });
 
-  registerCommands(bot);
-  registerPollCommand(bot, services.pollStorage);
+  bot.use(async (ctx, next) => {
+    logIncomingMessage(ctx);
+    await next();
+  });
+
+  registerCommands(bot, services.pollStorage);
   registerPollAnswerHandler(bot, services.pollStorage);
-  registerCallbackHandlers(bot);
-  registerMessageHandlers(bot);
+  registerPollCallbackHandlers(bot);
+  registerUpdateCallbackHandlers(bot);
+  registerMessageRouter(bot);
 
   bot.catch((err) => {
     const ctx = err.ctx;

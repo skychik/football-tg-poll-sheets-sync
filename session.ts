@@ -1,4 +1,5 @@
 import type { Context, SessionFlavor } from 'grammy';
+import type { AppServices } from './app-services';
 
 export interface SessionData {
   state:
@@ -49,4 +50,5 @@ export function resetSession(session: SessionData): void {
   session.columnMatches = undefined;
 }
 
-export type MyContext = Context & SessionFlavor<SessionData>;
+export type MyContext = Context &
+  SessionFlavor<SessionData> & { services: AppServices };

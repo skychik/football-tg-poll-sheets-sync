@@ -1,5 +1,4 @@
 import { ERR_SESSION_DATA_LOST } from './constants';
-import { getPollById, type PollData } from './poll';
 import { type MyContext, resetSession } from './session';
 
 /**
@@ -64,44 +63,6 @@ export async function requireSessionFields(
     }
   }
   return true;
-}
-
-/**
- * Build poll options text with vote counts
- */
-export function buildPollOptionsText(pollData: PollData): string {
-  let optionsText = '';
-  pollData.options.forEach((option, index) => {
-    const voters = pollData.votes.get(index) || new Set();
-    optionsText += `${index + 1}. ${option} (${voters.size} vote${voters.size !== 1 ? 's' : ''})\n`;
-  });
-  return optionsText;
-}
-
-/**
- * Get poll data from session or reply with error
- * @returns PollData if found, null if error was sent
- */
-export async function getPollDataOrError(
-  ctx: MyContext,
-): Promise<{ pollId: string; pollData: PollData } | null> {
-  const pollId = ctx.session.pollId;
-
-  if (!pollId) {
-    await replyErrorAndReset(
-      ctx,
-      '❌ Error: poll data lost. Please forward the poll again.',
-    );
-    return null;
-  }
-
-  const pollData = await getPollById(pollId, ctx.services.pollStorage);
-  if (!pollData) {
-    await replyErrorAndReset(ctx, '❌ Error: poll data not found.');
-    return null;
-  }
-
-  return { pollId, pollData };
 }
 
 /**

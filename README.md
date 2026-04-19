@@ -27,8 +27,8 @@ It supports both manual updates and poll-driven updates, and persists poll state
 1. Create poll with `/poll` and collect votes
 2. Forward that poll to the bot
 3. Choose:
-   - `1` to update sheet
-   - `2` to view voters
+  - `1` to update sheet
+  - `2` to view voters
 4. If updating, select the option containing attendees
 5. Complete column/metadata prompts and write to sheet
 
@@ -88,6 +88,8 @@ stateDiagram-v2
     }
 ```
 
+
+
 ### Redis Data Flow
 
 This is the runtime architecture for poll creation, vote tracking, and forwarded poll processing.
@@ -108,6 +110,8 @@ flowchart TD
     botHandlers -->|"selected attendees"| sheets
 ```
 
+
+
 ## Prerequisites
 
 - [Bun](https://bun.sh)
@@ -122,6 +126,12 @@ flowchart TD
 
 ```bash
 bun install
+```
+
+Run scenario-style integration tests (in-memory poll storage, stub Sheets client, recorded Telegram API):
+
+```bash
+bun test
 ```
 
 ### 2) Create Telegram bot

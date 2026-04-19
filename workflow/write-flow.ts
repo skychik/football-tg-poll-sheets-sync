@@ -1,0 +1,93 @@
+import { buildUpdateResultMessage, replyErrorAndReset } from '../bot-helpers';
+import { ERR_TARGET_COLUMN_NOT_SET } from '../constants';
+import { overrideConfirmationKeyboard } from '../keyboards';
+import type { MyContext } from '../session';
+import { resetSession } from '../session';
+
+/**
+ * Check for existing values and either write directly or ask for override confirmation
+ * Shared logic between player count confirmation and direct write flows
+ */
+export async function checkOverridesAndWrite(
+  ctx: MyContext,
+  nicknameRows: Map<string, number>,
+): Promise<void> {
+  const column = ctx.session.targetColumn;
+  if (!column) {
+    await replyErrorAndReset(ctx, ERR_TARGET_COLUMN_NOT_SET);
+    return;
+  }
+
+  const sheetsClient = await ctx.services.createSheetsClient();
+
+  const existingValues = await sheetsClient.checkExistingValues(
+    nicknameRows,
+    column,
+  );
+
+  if (existingValues.length > 0) {
+    ctx.session.column = column;
+    ctx.session.nicknameRowsEntries = Array.from(nicknameRows.entries());
+    ctx.session.existingValuesEntries = existingValues;
+    ctx.session.state = 'awaiting_override_confirmation';
+
+    let message = `⚠️ These users already have values in column ${column}:\n\n`;
+    existingValues.forEach((ev) => {
+      message += `• ${ev.nickname}: ${ev.value}\n`;
+    });
+    message += `\nWhat would you like to do?`;
+
+    await ctx.reply(message, { reply_markup: overrideConfirmationKeyboard() });
+  } else {
+    await writeZerosAndRespond(ctx, nicknameRows, column, true, []);
+  }
+}
+
+/**
+ * Write zeros to sheet and send response message
+ * Common logic for final write step
+ */
+export async function writeZerosAndRespond(
+  ctx: MyContext,
+  nicknameRows: Map<string, number>,
+  column: string,
+  overrideExisting: boolean,
+  skippedNicknames: string[],
+): Promise<void> {
+  await ctx.reply('⏳ Updating sheet...');
+
+  const sheetsClient = await ctx.services.createSheetsClient();
+
+  console.log(
+    `[SHEET UPDATE] Column: ${column}, Users: ${Array.from(nicknameRows.keys()).join(', ')}, Override: ${overrideExisting}, Skipped: ${skippedNicknames.join(', ') || 'none'}, Chat ID: ${ctx.chat?.id || 'unknown'}, User: @${ctx.from?.username || 'unknown'}`,
+  );
+
+  const result = await sheetsClient.writeZeros(
+    nicknameRows,
+    column,
+    overrideExisting,
+  );
+
+  console.log(
+    `[SHEET UPDATE COMPLETE] Column: ${column}, Updated: ${result.updated}, Not found: ${result.notFound.length}`,
+  );
+
+  const allFoundNicknames = Array.from(nicknameRows.keys());
+  const updatedNicknames = allFoundNicknames.filter(
+    (n) => !skippedNicknames.includes(n),
+  );
+  const notFoundNicknames = ctx.session.usernames.filter(
+    (u) => !allFoundNicknames.includes(u),
+  );
+
+  const response = buildUpdateResultMessage(
+    column,
+    result.updated,
+    updatedNicknames,
+    skippedNicknames,
+    notFoundNicknames,
+  );
+
+  await ctx.reply(response);
+  resetSession(ctx.session);
+}

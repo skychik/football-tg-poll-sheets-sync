@@ -11,99 +11,31 @@ import {
   SHEET_NAME,
   SHEET_NICKNAME_COLUMN,
   SHEET_PLAYER_COUNT_ROW,
-} from './constants';
+} from '../constants';
+import { columnLetterToIndex, indexToColumnLetter } from './sheet-columns';
+import type {
+  ColumnMetadata,
+  ExistingValue,
+  SheetsClient,
+} from './sheets-types';
 
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SHEETS_API_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 
-if (!SPREADSHEET_ID) {
-  throw new Error('SPREADSHEET_ID environment variable is required');
-}
-
-/**
- * Convert column letter to index (0-based)
- * "A" -> 0, "Z" -> 25, "AA" -> 26
- */
-function columnLetterToIndex(letter: string): number {
-  let index = 0;
-  for (let i = 0; i < letter.length; i++) {
-    index = index * 26 + (letter.charCodeAt(i) - 64);
+function requireSpreadsheetId(): string {
+  const id = process.env.SPREADSHEET_ID;
+  if (!id) {
+    throw new Error('SPREADSHEET_ID environment variable is required');
   }
-  return index - 1;
+  return id;
 }
 
 /**
- * Convert index to column letter (0-based)
- * 0 -> "A", 25 -> "Z", 26 -> "AA"
+ * Build a Google Sheets API client (service account). Reads `SPREADSHEET_ID` when invoked, not at import time.
  */
-function indexToColumnLetter(index: number): string {
-  let result = '';
-  index++;
-  while (index > 0) {
-    index--;
-    result = String.fromCharCode(65 + (index % 26)) + result;
-    index = Math.floor(index / 26);
-  }
-  return result;
-}
-
-/**
- * Get next column letter
- * "O" -> "P", "Z" -> "AA"
- */
-function getNextColumnLetter(letter: string): string {
-  const index = columnLetterToIndex(letter);
-  return indexToColumnLetter(index + 1);
-}
-
-interface ExistingValue {
-  nickname: string;
-  value: string | number;
-}
-
-interface ColumnMetadata {
-  date?: string;
-  cost?: number;
-  playerCount?: number;
-}
-
-interface SheetsClient {
-  findNicknameRows: (nicknames: string[]) => Promise<Map<string, number>>;
-  checkExistingValues: (
-    nicknameRows: Map<string, number>,
-    column: string,
-  ) => Promise<ExistingValue[]>;
-  writeZeros: (
-    nicknameRows: Map<string, number>,
-    column: string,
-    overrideExisting?: boolean,
-  ) => Promise<{ updated: number; notFound: string[] }>;
-  findLastDateColumn: () => Promise<{ column: string; date: string } | null>;
-  findColumnByDateText: (text: string) => Promise<
-    | { success: true; column: string; date: string }
-    | {
-        success: true;
-        multiple: true;
-        matches: Array<{ column: string; date: string }>;
-      }
-    | { success: false; error: 'not_found' }
-  >;
-  getColumnMetadata: (column: string) => Promise<ColumnMetadata>;
-  writeColumnMetadata: (
-    column: string,
-    date?: string,
-    cost?: number,
-    playerCount?: number,
-  ) => Promise<void>;
-}
-
-/**
- * Initialize Google Sheets client using Service Account authentication
- */
-async function initSheetsClient(): Promise<SheetsClient> {
+export async function createGoogleSheetsClient(): Promise<SheetsClient> {
+  const SPREADSHEET_ID = requireSpreadsheetId();
   let auth: JWT;
 
-  // Priority 1: Use JSON file path from env
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON_PATH) {
     const jsonPath = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_PATH;
     if (!existsSync(jsonPath)) {
@@ -113,12 +45,9 @@ async function initSheetsClient(): Promise<SheetsClient> {
       keyFile: jsonPath,
       scopes: [SHEETS_API_SCOPE],
     });
-  }
-  // Priority 2: Try to find JSON file in current directory
-  else {
-    // Look for service account JSON files (pattern: *-*.json or common names)
+  } else {
     const possibleFiles = [
-      'cosmic-flux-383910-d8f7992822ad.json', // Your specific file
+      'cosmic-flux-383910-d8f7992822ad.json',
       'service-account-key.json',
       'google-credentials.json',
       'credentials.json',
@@ -128,7 +57,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
     for (const file of possibleFiles) {
       const fullPath = join(process.cwd(), file);
       if (existsSync(fullPath)) {
-        // Verify it's a valid service account JSON
         try {
           const content = JSON.parse(readFileSync(fullPath, 'utf8'));
           if (content.type === 'service_account' && content.private_key) {
@@ -136,7 +64,7 @@ async function initSheetsClient(): Promise<SheetsClient> {
             break;
           }
         } catch {
-          // Not a valid JSON, continue
+          // continue
         }
       }
     }
@@ -147,7 +75,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
         scopes: ['https://www.googleapis.com/auth/spreadsheets'],
       });
     } else {
-      // Priority 3: Use individual credentials from env vars
       const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
       const key = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
@@ -160,7 +87,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
         );
       }
 
-      // Validate private key format
       if (
         !key.includes('BEGIN PRIVATE KEY') ||
         !key.includes('END PRIVATE KEY')
@@ -180,21 +106,15 @@ async function initSheetsClient(): Promise<SheetsClient> {
 
   const sheets = google.sheets({ version: 'v4', auth });
 
-  /**
-   * Find row numbers for given nicknames in column B
-   * Returns a map of nickname -> row number
-   */
   async function findNicknameRows(
     nicknames: string[],
   ): Promise<Map<string, number>> {
-    // Normalize nicknames: remove @ and convert to lowercase for matching
     const normalizedNicknames = new Map<string, string>();
     nicknames.forEach((nick) => {
       const normalized = nick.replace(/^@/, '').toLowerCase();
       normalizedNicknames.set(normalized, nick);
     });
 
-    // Read column B starting from row 7
     const range = `${SHEET_NICKNAME_COLUMN}${SHEET_DATA_FIRST_ROW}:${SHEET_NICKNAME_COLUMN}`;
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
@@ -206,7 +126,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
 
     rows.forEach((row, index) => {
       if (row[0]) {
-        // Normalize the nickname from sheet (remove @, lowercase)
         const sheetNickname = String(row[0]).replace(/^@/, '').toLowerCase();
         const originalNickname = normalizedNicknames.get(sheetNickname);
         if (originalNickname) {
@@ -219,10 +138,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
     return nicknameToRow;
   }
 
-  /**
-   * Check existing values in specified column for given nickname rows
-   * Returns list of nicknames that already have non-empty values
-   */
   async function checkExistingValues(
     nicknameRows: Map<string, number>,
     column: string,
@@ -231,13 +146,11 @@ async function initSheetsClient(): Promise<SheetsClient> {
       return [];
     }
 
-    // Build range for all cells we want to check
     const ranges: string[] = [];
     nicknameRows.forEach((row) => {
       ranges.push(`'${SHEET_NAME}'!${column}${row}`);
     });
 
-    // Read all values at once using batchGet
     const response = await sheets.spreadsheets.values.batchGet({
       spreadsheetId: SPREADSHEET_ID,
       ranges,
@@ -250,11 +163,8 @@ async function initSheetsClient(): Promise<SheetsClient> {
       const [nickname, _row] = rowsArray[index];
       const values = valueRange.values || [];
 
-      // Check if cell has a value (not empty)
-      // Empty cells may return empty array or array with empty string
       if (values.length > 0 && values[0] && values[0].length > 0) {
         const cellValue = values[0][0];
-        // Consider empty string, null, undefined, or just whitespace as empty
         if (
           cellValue !== null &&
           cellValue !== undefined &&
@@ -271,10 +181,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
     return existingValues;
   }
 
-  /**
-   * Write zeros to specified column for given nickname rows
-   * @param overrideExisting - if false, skip cells that already have values
-   */
   async function writeZeros(
     nicknameRows: Map<string, number>,
     column: string,
@@ -284,7 +190,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
       return { updated: 0, notFound: [] };
     }
 
-    // If not overriding, check existing values first
     let rowsToUpdate = nicknameRows;
     if (!overrideExisting) {
       const existingValues = await checkExistingValues(nicknameRows, column);
@@ -292,7 +197,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
         existingValues.map((ev) => ev.nickname),
       );
 
-      // Filter out rows with existing values
       rowsToUpdate = new Map<string, number>();
       nicknameRows.forEach((row, nickname) => {
         if (!existingNicknames.has(nickname)) {
@@ -305,18 +209,16 @@ async function initSheetsClient(): Promise<SheetsClient> {
       return { updated: 0, notFound: [] };
     }
 
-    // Prepare batch update
     const updates: Array<{ range: string; values: (string | number)[][] }> = [];
 
     rowsToUpdate.forEach((row, _nickname) => {
       const range = `'${SHEET_NAME}'!${column}${row}`;
       updates.push({
         range,
-        values: [[0]], // Use number 0, not string '0'
+        values: [[0]],
       });
     });
 
-    // Batch write all zeros
     await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
@@ -331,20 +233,12 @@ async function initSheetsClient(): Promise<SheetsClient> {
     return { updated, notFound };
   }
 
-  /**
-   * Find the last date column by scanning row 1 from column F until empty cell
-   * Returns column letter and date value, or null if no date columns found
-   */
   async function findLastDateColumn(): Promise<{
     column: string;
     date: string;
   } | null> {
-    // Start from column F and read row 1 until we find an empty cell
-    const _currentColumn = SHEET_DATA_FIRST_COLUMN;
     let lastDateColumn: { column: string; date: string } | null = null;
 
-    // Read a large range to find the last non-empty cell
-    // Read row 1 from column F to column ZZ (max reasonable range)
     const range = `'${SHEET_NAME}'!${SHEET_DATA_FIRST_COLUMN}${SHEET_DATE_ROW}:ZZ${SHEET_DATE_ROW}`;
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
@@ -353,7 +247,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
 
     const values = response.data.values?.[0] || [];
 
-    // Find the last non-empty cell until there is an empty cell
     for (let i = 0; i < values.length; i++) {
       const value = values[i];
       const prevIndex = i - 1;
@@ -373,12 +266,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
     return lastDateColumn;
   }
 
-  /**
-   * Find column by searching for date text in row 1
-   * Returns column letter and date if exactly one match found
-   * Returns matches array if multiple found (sorted by column index descending)
-   * Returns error info if 0 matches found
-   */
   async function findColumnByDateText(text: string): Promise<
     | { success: true; column: string; date: string }
     | {
@@ -393,7 +280,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
       return { success: false, error: 'not_found' };
     }
 
-    // Read row 1 from column F to column ZZ
     const range = `'${SHEET_NAME}'!${SHEET_DATA_FIRST_COLUMN}${SHEET_DATE_ROW}:ZZ${SHEET_DATE_ROW}`;
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
@@ -403,7 +289,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
     const values = response.data.values?.[0] || [];
     const matches: Array<{ column: string; date: string }> = [];
 
-    // Search through all cells in row 1
     for (let i = 0; i < values.length; i++) {
       const value = values[i];
       if (
@@ -412,11 +297,9 @@ async function initSheetsClient(): Promise<SheetsClient> {
         String(value).trim() !== ''
       ) {
         const cellValue = String(value).trim();
-        // Skip columns that match exclude pattern
         if (SHEET_EXCLUDE_COLUMN_PATTERN.test(cellValue)) {
           continue;
         }
-        // Case-insensitive partial match
         if (cellValue.toLowerCase().includes(searchText)) {
           const columnIndex = columnLetterToIndex(SHEET_DATA_FIRST_COLUMN) + i;
           const columnLetter = indexToColumnLetter(columnIndex);
@@ -433,11 +316,10 @@ async function initSheetsClient(): Promise<SheetsClient> {
     }
 
     if (matches.length > 1) {
-      // Sort by column index descending (biggest ID first)
       matches.sort((a, b) => {
         const indexA = columnLetterToIndex(a.column);
         const indexB = columnLetterToIndex(b.column);
-        return indexB - indexA; // Descending order
+        return indexB - indexA;
       });
       return {
         success: true,
@@ -453,9 +335,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
     };
   }
 
-  /**
-   * Get metadata for a column (date, cost, player count from rows 1-3)
-   */
   async function getColumnMetadata(column: string): Promise<ColumnMetadata> {
     const range = `'${SHEET_NAME}'!${column}${SHEET_DATE_ROW}:${column}${SHEET_PLAYER_COUNT_ROW}`;
     const response = await sheets.spreadsheets.values.get({
@@ -466,7 +345,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
     const rows = response.data.values || [];
     const metadata: ColumnMetadata = {};
 
-    // Row 1: Date
     if (
       rows[0] &&
       rows[0][0] !== null &&
@@ -476,7 +354,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
       metadata.date = String(rows[0][0]).trim();
     }
 
-    // Row 2: Cost
     if (
       rows[1] &&
       rows[1][0] !== null &&
@@ -493,7 +370,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
       }
     }
 
-    // Row 3: Player count
     if (
       rows[2] &&
       rows[2][0] !== null &&
@@ -513,9 +389,6 @@ async function initSheetsClient(): Promise<SheetsClient> {
     return metadata;
   }
 
-  /**
-   * Write metadata to column (rows 1-3)
-   */
   async function writeColumnMetadata(
     column: string,
     date?: string,
@@ -566,13 +439,3 @@ async function initSheetsClient(): Promise<SheetsClient> {
     writeColumnMetadata,
   };
 }
-
-export {
-  columnLetterToIndex,
-  getNextColumnLetter,
-  indexToColumnLetter,
-  initSheetsClient,
-  type ColumnMetadata,
-  type ExistingValue,
-  type SheetsClient,
-};
