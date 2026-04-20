@@ -5,6 +5,11 @@ import type { MyContext } from '../session';
 import { resetSession } from '../session';
 import { startColumnDetectionFlow } from '../workflow/column-detection';
 
+const POLL_USAGE_REPLY =
+  '❌ Please provide poll question and options.\n\n' +
+  'Usage: /poll Question? | Option1 | Option2 | Option3\n' +
+  'Separators: | or ; or newlines';
+
 /**
  * Register all slash command handlers (including `/poll`).
  */
@@ -53,15 +58,15 @@ export function registerCommands(
   bot.command('poll', async (ctx) => {
     const text = ctx.message?.text;
     if (!text) {
-      await ctx.reply(
-        '❌ Please provide poll question and options.\n\n' +
-          'Usage: /poll Question? | Option1 | Option2 | Option3\n' +
-          'Separators: | or ; or newlines',
-      );
+      await ctx.reply(POLL_USAGE_REPLY);
       return;
     }
 
-    const content = text.replace(/^\/poll\s+/i, '').trim();
+    const content = text.replace(/^\/poll(?:@\w+)?\b/i, '').trim();
+    if (content === '') {
+      await ctx.reply(POLL_USAGE_REPLY);
+      return;
+    }
 
     const parts = content
       .split(/[|;\n]+/)

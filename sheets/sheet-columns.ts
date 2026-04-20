@@ -3,14 +3,23 @@
  */
 
 export function columnLetterToIndex(letter: string): number {
+  const normalized = letter.trim().toUpperCase();
+  if (!/^[A-Z]+$/.test(normalized)) {
+    throw new Error(`Invalid column letter: "${letter}"`);
+  }
+
   let index = 0;
-  for (let i = 0; i < letter.length; i++) {
-    index = index * 26 + (letter.charCodeAt(i) - 64);
+  for (let i = 0; i < normalized.length; i++) {
+    index = index * 26 + (normalized.charCodeAt(i) - 64);
   }
   return index - 1;
 }
 
 export function indexToColumnLetter(index: number): string {
+  if (!Number.isInteger(index) || index < 0) {
+    throw new Error(`Invalid column index: ${index}`);
+  }
+
   let result = '';
   index++;
   while (index > 0) {

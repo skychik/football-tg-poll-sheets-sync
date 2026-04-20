@@ -6,9 +6,19 @@ import {
   persistPlayerCountToSheetAndCheckOverrides,
 } from '../../flows/update-write-actions';
 import { CallbackPrefix } from '../../keyboards';
-import type { MyContext } from '../../session';
+import type { MyContext, SessionData } from '../../session';
 import { resetSession } from '../../session';
 import { proceedWithMetadataCollection } from '../../workflow/metadata-flow';
+
+function clearColumnScopedSessionFields(session: SessionData): void {
+  session.dateName = undefined;
+  session.cost = undefined;
+  session.playerCount = undefined;
+  session.column = undefined;
+  session.nicknameRowsEntries = undefined;
+  session.existingValuesEntries = undefined;
+  session.columnMatches = undefined;
+}
 
 /**
  * Register callback_query handlers for sheet update workflow (column + yes/no).
@@ -44,6 +54,7 @@ export function registerUpdateCallbackHandlers(bot: Bot<MyContext>): void {
 
     if (data.startsWith('use:')) {
       const column = data.slice(4);
+      clearColumnScopedSessionFields(ctx.session);
       ctx.session.targetColumn = column;
       ctx.session.isNewColumn = false;
       await ctx.editMessageText(`✅ Using column ${column}`);
@@ -53,6 +64,7 @@ export function registerUpdateCallbackHandlers(bot: Bot<MyContext>): void {
 
     if (data.startsWith('new:')) {
       const column = data.slice(4);
+      clearColumnScopedSessionFields(ctx.session);
       ctx.session.targetColumn = column;
       ctx.session.isNewColumn = true;
       ctx.session.state = 'awaiting_date_name';
@@ -64,6 +76,7 @@ export function registerUpdateCallbackHandlers(bot: Bot<MyContext>): void {
 
     if (data.startsWith('create:')) {
       const column = data.slice(7);
+      clearColumnScopedSessionFields(ctx.session);
       ctx.session.targetColumn = column;
       ctx.session.isNewColumn = true;
       ctx.session.state = 'awaiting_date_name';
@@ -83,9 +96,9 @@ export function registerUpdateCallbackHandlers(bot: Bot<MyContext>): void {
 
     if (data.startsWith('select:')) {
       const column = data.slice(7);
+      clearColumnScopedSessionFields(ctx.session);
       ctx.session.targetColumn = column;
       ctx.session.isNewColumn = false;
-      ctx.session.columnMatches = undefined;
       await ctx.editMessageText(`✅ Selected column ${column}`);
       await proceedWithMetadataCollection(ctx);
       return;
