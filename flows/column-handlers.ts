@@ -9,8 +9,7 @@ import {
 import { columnSelectionKeyboard } from '../keyboards';
 import type { MyContext } from '../session';
 import { resetSession } from '../session';
-import { getNextColumnLetter, initSheetsClient } from '../sheets';
-import { proceedWithMetadataCollection } from '../workflow';
+import { proceedWithMetadataCollection } from '../workflow/metadata-flow';
 
 /**
  * Start new column creation flow - ask for date name
@@ -50,7 +49,9 @@ export async function handleColumnConfirmation(
       await proceedWithMetadataCollection(ctx);
     } else {
       // Calculate next column and go directly to date name
-      const nextColumn = getNextColumnLetter(ctx.session.targetColumn);
+      const nextColumn = ctx.services.getNextColumnLetter(
+        ctx.session.targetColumn,
+      );
       await askForDateName(ctx, nextColumn);
     }
     return true;
@@ -67,7 +68,7 @@ export async function handleColumnConfirmation(
 
   // Otherwise, treat as date text search
   try {
-    const sheetsClient = await initSheetsClient();
+    const sheetsClient = await ctx.services.createSheetsClient();
     const result = await sheetsClient.findColumnByDateText(trimmedText);
 
     if (!result.success) {
@@ -132,7 +133,7 @@ export async function handleNewColumnChoice(
   }
 
   if (answer === 'yes') {
-    // targetColumn is already set from workflow.ts
+    // targetColumn is already set from column detection
     const column = ctx.session.targetColumn || SHEET_DATA_FIRST_COLUMN;
     await askForDateName(ctx, column);
   } else {
@@ -237,7 +238,7 @@ export async function handleDateName(
   }
 
   try {
-    const sheetsClient = await initSheetsClient();
+    const sheetsClient = await ctx.services.createSheetsClient();
     await sheetsClient.writeColumnMetadata(targetColumn, ctx.session.dateName);
   } catch (error) {
     await handleApiError(ctx, error, 'writing date', false);
@@ -278,7 +279,7 @@ export async function handleCost(
   }
 
   try {
-    const sheetsClient = await initSheetsClient();
+    const sheetsClient = await ctx.services.createSheetsClient();
     await sheetsClient.writeColumnMetadata(
       targetColumn,
       undefined,

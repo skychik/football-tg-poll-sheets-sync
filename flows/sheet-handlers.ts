@@ -1,16 +1,15 @@
-import { handleApiError, parseYesNo, replyErrorAndReset } from '../bot-helpers';
+import { parseYesNo, replyErrorAndReset } from '../bot-helpers';
 import {
   ERR_INVALID_YES_NO,
   ERR_SESSION_DATA_LOST,
   ERR_TARGET_COLUMN_NOT_SET,
 } from '../constants';
 import type { MyContext } from '../session';
-import { initSheetsClient } from '../sheets';
+import { proceedWithPlayerCountCheck } from '../workflow/player-count-flow';
 import {
-  checkOverridesAndWrite,
-  proceedWithPlayerCountCheck,
-  writeZerosAndRespond,
-} from '../workflow';
+  finalizeOverrideWrite,
+  persistPlayerCountToSheetAndCheckOverrides,
+} from './update-write-actions';
 
 /**
  * Parse usernames from text input
@@ -92,26 +91,7 @@ export async function handlePlayerCountConfirmation(
 
   if (answer === 'yes') {
     ctx.session.playerCount = recognizedCount;
-
-    try {
-      const sheetsClient = await initSheetsClient();
-      await sheetsClient.writeColumnMetadata(
-        ctx.session.targetColumn,
-        undefined,
-        undefined,
-        ctx.session.playerCount,
-      );
-
-      // Check for existing values and handle override
-      await checkOverridesAndWrite(ctx, nicknameRows);
-    } catch (error) {
-      await handleApiError(
-        ctx,
-        error,
-        'writing player count or checking overrides',
-        false,
-      );
-    }
+    await persistPlayerCountToSheetAndCheckOverrides(ctx, nicknameRows);
   } else {
     ctx.session.state = 'awaiting_player_count';
     await ctx.reply('How many players attended the match?');
@@ -146,22 +126,12 @@ export async function handlePlayerCount(
     return true;
   }
 
-  try {
-    const sheetsClient = await initSheetsClient();
-    await sheetsClient.writeColumnMetadata(
-      ctx.session.targetColumn,
-      undefined,
-      undefined,
-      ctx.session.playerCount,
-    );
-
-    const nicknameRows = new Map<string, number>(
-      ctx.session.nicknameRowsEntries,
-    );
-    await checkOverridesAndWrite(ctx, nicknameRows);
-  } catch (error) {
-    await handleApiError(ctx, error, 'writing player count', false);
-  }
+  const nicknameRows = new Map<string, number>(ctx.session.nicknameRowsEntries);
+  await persistPlayerCountToSheetAndCheckOverrides(
+    ctx,
+    nicknameRows,
+    'writing player count',
+  );
 
   return true;
 }
@@ -196,22 +166,7 @@ export async function handleOverrideConfirmation(
   const nicknameRows = new Map<string, number>(ctx.session.nicknameRowsEntries);
   const overrideExisting = answer === 'yes';
 
-  const skippedNicknames: string[] =
-    !overrideExisting && ctx.session.existingValuesEntries
-      ? ctx.session.existingValuesEntries.map((ev) => ev.nickname)
-      : [];
-
-  try {
-    await writeZerosAndRespond(
-      ctx,
-      nicknameRows,
-      columnToUse,
-      overrideExisting,
-      skippedNicknames,
-    );
-  } catch (error) {
-    await handleApiError(ctx, error, 'updating sheet');
-  }
+  await finalizeOverrideWrite(ctx, nicknameRows, overrideExisting);
 
   return true;
 }

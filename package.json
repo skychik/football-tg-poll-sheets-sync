@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "bun run index.ts",
+    "test": "bun test",
     "dev": "bun --watch index.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
