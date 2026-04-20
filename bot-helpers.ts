@@ -1,5 +1,5 @@
 import { ERR_SESSION_DATA_LOST } from './constants';
-import { type MyContext, resetSession } from './session';
+import { type MyContext, type SessionData, resetSession } from './session';
 
 /**
  * Parse yes/no response from user text
@@ -47,7 +47,7 @@ export async function replyErrorAndReset(
  */
 export async function requireSessionFields(
   ctx: MyContext,
-  fields: Array<keyof typeof ctx.session>,
+  fields: Array<keyof SessionData>,
   errorMessage: string = ERR_SESSION_DATA_LOST,
 ): Promise<boolean> {
   for (const field of fields) {

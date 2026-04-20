@@ -15,7 +15,10 @@ function deserializeVotes(
   const votes = new Map<number, Set<string>>();
 
   for (const [optionIndex, voters] of Object.entries(serializedVotes)) {
-    votes.set(Number(optionIndex), new Set(voters));
+    const idx = Number(optionIndex);
+    if (!Number.isNaN(idx)) {
+      votes.set(idx, new Set(voters));
+    }
   }
 
   return votes;

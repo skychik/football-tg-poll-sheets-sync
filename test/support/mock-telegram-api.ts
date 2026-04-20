@@ -51,15 +51,16 @@ export function installMockTelegramApi(bot: Bot) {
     }
 
     if (method === 'sendPoll') {
+      const msgId = messageSeq++;
       const msg: Message = {
-        message_id: messageSeq++,
+        message_id: msgId,
         date: Math.floor(Date.now() / 1000),
         chat: {
           id: p.chat_id as number,
           type: 'private',
         },
         poll: {
-          id: `poll_${messageSeq}`,
+          id: `poll_${msgId}`,
           question: p.question as string,
           options: (p.options as { text: string }[]).map((o) => ({
             text: o.text,

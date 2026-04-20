@@ -85,11 +85,6 @@ export function registerCommands(
     const question = parts[0];
     const options = parts.slice(1);
 
-    if (options.length < 1) {
-      await ctx.reply('❌ Please provide at least one option.');
-      return;
-    }
-
     try {
       const pollMessage = await ctx.api.sendPoll(
         ctx.chat.id,

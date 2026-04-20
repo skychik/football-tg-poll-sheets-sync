@@ -18,6 +18,9 @@ export async function persistPlayerCountToSheetAndCheckOverrides(
 ): Promise<void> {
   const targetColumn = ctx.session.targetColumn;
   if (!targetColumn) {
+    console.warn(
+      '[persistPlayerCountToSheetAndCheckOverrides] targetColumn not set, skipping',
+    );
     return;
   }
   try {

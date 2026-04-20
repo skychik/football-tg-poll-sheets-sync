@@ -60,18 +60,13 @@ export function registerPollAnswerHandler(
       return;
     }
 
-    if (!('username' in user)) {
-      console.log(
-        '[POLL ANSWER HANDLER] User does not have username property, exiting',
-      );
-      return;
-    }
-
-    const username = (user as { username?: string }).username;
+    const username = user.username;
     console.log('[POLL ANSWER HANDLER] Username:', username);
 
     if (!username) {
-      console.log('[POLL ANSWER HANDLER] Username is empty, exiting');
+      console.log(
+        '[POLL ANSWER HANDLER] Username is undefined or empty, exiting',
+      );
       return;
     }
 

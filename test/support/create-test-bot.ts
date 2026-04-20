@@ -1,6 +1,7 @@
 import type { Message } from '@grammyjs/types';
 import type { Bot } from 'grammy';
 import { InMemoryPollStorage } from '../../poll-storage/in-memory-poll-storage';
+import type { MyContext } from '../../session';
 import { getNextColumnLetter } from '../../sheets/sheet-columns';
 import { createBot } from '../../telegram/create-bot';
 import { baseSheets, type SheetsStub } from '../sheet-test-stub';
@@ -37,7 +38,7 @@ export function createTelegramTestKit() {
       sheetsClient = next;
     },
     setupTestBot(): {
-      bot: Bot;
+      bot: Bot<MyContext>;
       calls: RecordedApiCall[];
       getLastBotMessage: () => Message | undefined;
     } {
