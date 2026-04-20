@@ -52,15 +52,11 @@ export async function finalizeOverrideWrite(
       ? ctx.session.existingValuesEntries.map((ev) => ev.nickname)
       : [];
 
-  try {
-    await writeZerosAndRespond(
-      ctx,
-      nicknameRows,
-      columnToUse,
-      overrideExisting,
-      skippedNicknames,
-    );
-  } catch (error) {
-    await handleApiError(ctx, error, 'updating sheet');
-  }
+  await writeZerosAndRespond(
+    ctx,
+    nicknameRows,
+    columnToUse,
+    overrideExisting,
+    skippedNicknames,
+  );
 }

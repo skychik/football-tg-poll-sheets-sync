@@ -4,6 +4,20 @@ import { overrideConfirmationKeyboard } from '../keyboards';
 import type { MyContext } from '../session';
 import { resetSession } from '../session';
 
+function briefErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error';
+}
+
+async function notifySheetUpdateFailure(
+  ctx: MyContext,
+  error: unknown,
+  logLabel: string,
+): Promise<void> {
+  console.error(`[${logLabel}]`, error);
+  resetSession(ctx.session);
+  await ctx.reply(`❌ Failed to update sheet: ${briefErrorMessage(error)}`);
+}
+
 /**
  * Check for existing values and either write directly or ask for override confirmation
  * Shared logic between player count confirmation and direct write flows
@@ -18,28 +32,32 @@ export async function checkOverridesAndWrite(
     return;
   }
 
-  const sheetsClient = await ctx.services.createSheetsClient();
+  try {
+    const sheetsClient = await ctx.services.createSheetsClient();
 
-  const existingValues = await sheetsClient.checkExistingValues(
-    nicknameRows,
-    column,
-  );
+    const existingValues = await sheetsClient.checkExistingValues(
+      nicknameRows,
+      column,
+    );
 
-  if (existingValues.length > 0) {
-    ctx.session.column = column;
-    ctx.session.nicknameRowsEntries = Array.from(nicknameRows.entries());
-    ctx.session.existingValuesEntries = existingValues;
-    ctx.session.state = 'awaiting_override_confirmation';
+    if (existingValues.length > 0) {
+      ctx.session.column = column;
+      ctx.session.nicknameRowsEntries = Array.from(nicknameRows.entries());
+      ctx.session.existingValuesEntries = existingValues;
+      ctx.session.state = 'awaiting_override_confirmation';
 
-    let message = `⚠️ These users already have values in column ${column}:\n\n`;
-    existingValues.forEach((ev) => {
-      message += `• ${ev.nickname}: ${ev.value}\n`;
-    });
-    message += `\nWhat would you like to do?`;
+      let message = `⚠️ These users already have values in column ${column}:\n\n`;
+      existingValues.forEach((ev) => {
+        message += `• ${ev.nickname}: ${ev.value}\n`;
+      });
+      message += `\nWhat would you like to do?`;
 
-    await ctx.reply(message, { reply_markup: overrideConfirmationKeyboard() });
-  } else {
-    await writeZerosAndRespond(ctx, nicknameRows, column, true, []);
+      await ctx.reply(message, { reply_markup: overrideConfirmationKeyboard() });
+    } else {
+      await writeZerosAndRespond(ctx, nicknameRows, column, true, []);
+    }
+  } catch (error) {
+    await notifySheetUpdateFailure(ctx, error, 'checkOverridesAndWrite');
   }
 }
 
@@ -56,38 +74,42 @@ export async function writeZerosAndRespond(
 ): Promise<void> {
   await ctx.reply('⏳ Updating sheet...');
 
-  const sheetsClient = await ctx.services.createSheetsClient();
+  try {
+    const sheetsClient = await ctx.services.createSheetsClient();
 
-  console.log(
-    `[SHEET UPDATE] Column: ${column}, Users: ${Array.from(nicknameRows.keys()).join(', ')}, Override: ${overrideExisting}, Skipped: ${skippedNicknames.join(', ') || 'none'}, Chat ID: ${ctx.chat?.id || 'unknown'}, User: @${ctx.from?.username || 'unknown'}`,
-  );
+    console.log(
+      `[SHEET UPDATE] Column: ${column}, Users: ${Array.from(nicknameRows.keys()).join(', ')}, Override: ${overrideExisting}, Skipped: ${skippedNicknames.join(', ') || 'none'}, Chat ID: ${ctx.chat?.id || 'unknown'}, User: @${ctx.from?.username || 'unknown'}`,
+    );
 
-  const result = await sheetsClient.writeZeros(
-    nicknameRows,
-    column,
-    overrideExisting,
-  );
+    const result = await sheetsClient.writeZeros(
+      nicknameRows,
+      column,
+      overrideExisting,
+    );
 
-  console.log(
-    `[SHEET UPDATE COMPLETE] Column: ${column}, Updated: ${result.updated}, Not found: ${result.notFound.length}`,
-  );
+    console.log(
+      `[SHEET UPDATE COMPLETE] Column: ${column}, Updated: ${result.updated}, Not found: ${result.notFound.length}`,
+    );
 
-  const allFoundNicknames = Array.from(nicknameRows.keys());
-  const updatedNicknames = allFoundNicknames.filter(
-    (n) => !skippedNicknames.includes(n),
-  );
-  const notFoundNicknames = ctx.session.usernames.filter(
-    (u) => !allFoundNicknames.includes(u),
-  );
+    const allFoundNicknames = Array.from(nicknameRows.keys());
+    const updatedNicknames = allFoundNicknames.filter(
+      (n) => !skippedNicknames.includes(n),
+    );
+    const notFoundNicknames = ctx.session.usernames.filter(
+      (u) => !allFoundNicknames.includes(u),
+    );
 
-  const response = buildUpdateResultMessage(
-    column,
-    result.updated,
-    updatedNicknames,
-    skippedNicknames,
-    notFoundNicknames,
-  );
+    const response = buildUpdateResultMessage(
+      column,
+      result.updated,
+      updatedNicknames,
+      skippedNicknames,
+      notFoundNicknames,
+    );
 
-  await ctx.reply(response);
-  resetSession(ctx.session);
+    await ctx.reply(response);
+    resetSession(ctx.session);
+  } catch (error) {
+    await notifySheetUpdateFailure(ctx, error, 'writeZerosAndRespond');
+  }
 }
