@@ -52,7 +52,9 @@ export async function checkOverridesAndWrite(
       });
       message += `\nWhat would you like to do?`;
 
-      await ctx.reply(message, { reply_markup: overrideConfirmationKeyboard() });
+      await ctx.reply(message, {
+        reply_markup: overrideConfirmationKeyboard(),
+      });
     } else {
       await writeZerosAndRespond(ctx, nicknameRows, column, true, []);
     }

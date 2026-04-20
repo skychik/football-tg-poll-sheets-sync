@@ -1,5 +1,5 @@
 import { ERR_SESSION_DATA_LOST } from './constants';
-import { type MyContext, type SessionData, resetSession } from './session';
+import { type MyContext, resetSession, type SessionData } from './session';
 
 /**
  * Parse yes/no response from user text

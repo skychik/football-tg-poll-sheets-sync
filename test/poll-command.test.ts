@@ -34,7 +34,10 @@ describe('/poll command', () => {
 
     const sendPoll = calls.find((c) => c.method === 'sendPoll');
     expect(sendPoll).toBeDefined();
-    const payload = sendPoll!.payload as {
+    if (sendPoll === undefined) {
+      throw new Error('expected sendPoll call');
+    }
+    const payload = sendPoll.payload as {
       question: string;
       options: { text: string }[];
     };

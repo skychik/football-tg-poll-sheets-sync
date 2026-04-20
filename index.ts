@@ -1,7 +1,7 @@
 import type { AppServices } from './app-services';
 import { InMemoryPollStorage } from './poll-storage/in-memory-poll-storage';
-import { IoredisPollStorage } from './poll-storage/redis-poll-storage';
 import type { PollStorage } from './poll-storage/poll-storage-types';
+import { IoredisPollStorage } from './poll-storage/redis-poll-storage';
 import { createGoogleSheetsClient } from './sheets/google-sheets-client';
 import { getNextColumnLetter } from './sheets/sheet-columns';
 import { asTelegramApp, createBot } from './telegram/create-bot';
