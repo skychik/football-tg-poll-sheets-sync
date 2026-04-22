@@ -11,6 +11,18 @@ export function baseSheets(overrides: Partial<SheetsStub> = {}): SheetsStub {
     writeZeros: async () => ({ updated: 0, notFound: [] }),
     getColumnMetadata: async () => ({}),
     writeColumnMetadata: async () => {},
+    findUserRowByTg: async () => null,
+    isTelegramUsernameInSheet: async () => false,
+    findFirstRowWithEmptyNameAndTg: async () => null,
+    writeRegisterRow: async () => {},
+    getMoneyUserCellInfo: async () => ({ cell: 'empty' }),
+    isCellEmpty: async () => true,
+    getNextDateColumnInfo: async () => ({
+      nextColumn: 'G',
+      headerEmpty: true,
+      userCellEmpty: true,
+    }),
+    writeMoneyToCell: async () => {},
   };
   return { ...base, ...overrides };
 }

@@ -10,6 +10,7 @@ export const CallbackPrefix = {
   COLUMN: 'col:',
   POLL_INTENT: 'pi:',
   POLL_OPTION: 'po:',
+  MONEY: 'mn:',
 } as const;
 
 /**
@@ -94,6 +95,38 @@ export function overrideConfirmationKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
     .text('✅ Overwrite', `${CallbackPrefix.YES_NO}override:yes`)
     .text('⏭️ Skip existing', `${CallbackPrefix.YES_NO}override:no`);
+}
+
+/**
+ * /money: pick last date column or next column.
+ */
+export function moneyColumnKeyboard(
+  lastCol: string,
+  lastDate: string,
+  nextCol: string,
+): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(`📅 ${lastCol} (${lastDate})`, `${CallbackPrefix.MONEY}col:last`)
+    .row()
+    .text(`➡️ ${nextCol} (next)`, `${CallbackPrefix.MONEY}col:next`);
+}
+
+export function moneyReplaceKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('✅ Replace', `${CallbackPrefix.MONEY}rp:yes`)
+    .text('❌ Cancel', `${CallbackPrefix.MONEY}rp:no`);
+}
+
+export function moneyEmptyCellKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('✅ Add anyway', `${CallbackPrefix.MONEY}em:yes`)
+    .text('❌ Cancel', `${CallbackPrefix.MONEY}em:no`);
+}
+
+export function moneyRow4Keyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('✅ Write anyway', `${CallbackPrefix.MONEY}r4:yes`)
+    .text('❌ Cancel', `${CallbackPrefix.MONEY}r4:no`);
 }
 
 /**

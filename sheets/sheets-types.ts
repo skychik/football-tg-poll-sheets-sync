@@ -9,6 +9,8 @@ export interface ColumnMetadata {
   playerCount?: number;
 }
 
+export type MoneyUserCellState = 'empty' | 'zero' | 'number';
+
 export interface SheetsClient {
   findNicknameRows: (nicknames: string[]) => Promise<Map<string, number>>;
   checkExistingValues: (
@@ -36,6 +38,39 @@ export interface SheetsClient {
     date?: string,
     cost?: number,
     playerCount?: number,
+  ) => Promise<void>;
+  /** e.g. `@alice` as stored in the sheet; returns sheet row or null */
+  findUserRowByTg: (atUsername: string) => Promise<number | null>;
+  isTelegramUsernameInSheet: (atUsername: string) => Promise<boolean>;
+  /** First data row (from row 7) where both A and B are empty; null if none */
+  findFirstRowWithEmptyNameAndTg: () => Promise<number | null>;
+  writeRegisterRow: (
+    row: number,
+    displayName: string,
+    atTg: string,
+  ) => Promise<void>;
+  getMoneyUserCellInfo: (params: {
+    column: string;
+    userRow: number;
+  }) => Promise<{
+    cell: MoneyUserCellState;
+    numericValue?: number;
+    /** Non-empty string if the cell is not actually numeric */
+    displayText?: string;
+  }>;
+  isCellEmpty: (params: { column: string; row: number }) => Promise<boolean>;
+  getNextDateColumnInfo: (params: {
+    lastDateColumn: string;
+    userRow: number;
+  }) => Promise<{
+    nextColumn: string;
+    headerEmpty: boolean;
+    userCellEmpty: boolean;
+  }>;
+  writeMoneyToCell: (
+    column: string,
+    userRow: number,
+    amount: number,
   ) => Promise<void>;
 }
 

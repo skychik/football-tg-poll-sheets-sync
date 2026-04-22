@@ -7,6 +7,12 @@ import {
   handleNewColumnChoice,
 } from '../flows/column-handlers';
 import {
+  handleAwaitingMoneyAmount,
+  tryHandleBareMoneyNumber,
+  tryHandleMoneyBlockedPlainText,
+} from '../flows/money-flow';
+import { handleAwaitingRegisterName } from '../flows/register-user';
+import {
   handleOverrideConfirmation,
   handlePlayerCount,
   handlePlayerCountConfirmation,
@@ -33,6 +39,11 @@ export function registerMessageRouter(bot: Bot<MyContext>): void {
     if (await handlePollOptionSelection(ctx, rawText)) return;
 
     if (ctx.chat.type !== 'private') return;
+
+    if (await tryHandleMoneyBlockedPlainText(ctx)) return;
+    if (await handleAwaitingRegisterName(ctx, rawText)) return;
+    if (await handleAwaitingMoneyAmount(ctx, rawText)) return;
+    if (await tryHandleBareMoneyNumber(ctx, rawText)) return;
 
     if (await handleColumnConfirmation(ctx, text)) return;
     if (await handleColumnSelection(ctx, rawText)) return;

@@ -9,13 +9,19 @@ import {
   SHEET_DATE_ROW,
   SHEET_EXCLUDE_COLUMN_PATTERN,
   SHEET_NAME,
+  SHEET_NAME_COLUMN,
   SHEET_NICKNAME_COLUMN,
   SHEET_PLAYER_COUNT_ROW,
 } from '../constants';
-import { columnLetterToIndex, indexToColumnLetter } from './sheet-columns';
+import {
+  columnLetterToIndex,
+  getNextColumnLetter,
+  indexToColumnLetter,
+} from './sheet-columns';
 import type {
   ColumnMetadata,
   ExistingValue,
+  MoneyUserCellState,
   SheetsClient,
 } from './sheets-types';
 
@@ -429,6 +435,153 @@ export async function createGoogleSheetsClient(): Promise<SheetsClient> {
     }
   }
 
+  function parseCellToMoneyInfo(val: unknown): {
+    cell: MoneyUserCellState;
+    numericValue?: number;
+    displayText?: string;
+  } {
+    if (val === null || val === undefined || String(val).trim() === '') {
+      return { cell: 'empty' };
+    }
+    const s = String(val).trim();
+    const n = typeof val === 'number' ? val : parseFloat(s);
+    if (Number.isNaN(n)) {
+      return { cell: 'number', displayText: s };
+    }
+    if (n === 0) {
+      return { cell: 'zero' };
+    }
+    return { cell: 'number', numericValue: n, displayText: s };
+  }
+
+  async function findUserRowByTg(atUsername: string): Promise<number | null> {
+    const m = await findNicknameRows([atUsername]);
+    const row = m.get(atUsername);
+    return row ?? null;
+  }
+
+  async function isTelegramUsernameInSheet(
+    atUsername: string,
+  ): Promise<boolean> {
+    return (await findUserRowByTg(atUsername)) !== null;
+  }
+
+  async function findFirstRowWithEmptyNameAndTg(): Promise<number | null> {
+    const range = `'${SHEET_NAME}'!${SHEET_NAME_COLUMN}${SHEET_DATA_FIRST_ROW}:${SHEET_NICKNAME_COLUMN}`;
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range,
+    });
+    const rows = response.data.values || [];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] || [];
+      const a = row[0];
+      const b = row[1];
+      const aEmpty = a == null || String(a).trim() === '';
+      const bEmpty = b == null || String(b).trim() === '';
+      if (aEmpty && bEmpty) {
+        return SHEET_DATA_FIRST_ROW + i;
+      }
+    }
+    return null;
+  }
+
+  async function writeRegisterRow(
+    row: number,
+    displayName: string,
+    atTg: string,
+  ): Promise<void> {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: {
+        valueInputOption: 'RAW',
+        data: [
+          {
+            range: `'${SHEET_NAME}'!${SHEET_NAME_COLUMN}${row}`,
+            values: [[displayName]],
+          },
+          {
+            range: `'${SHEET_NAME}'!${SHEET_NICKNAME_COLUMN}${row}`,
+            values: [[atTg]],
+          },
+        ],
+      },
+    });
+  }
+
+  async function getMoneyUserCellInfo(params: {
+    column: string;
+    userRow: number;
+  }): Promise<{
+    cell: MoneyUserCellState;
+    numericValue?: number;
+    displayText?: string;
+  }> {
+    const range = `'${SHEET_NAME}'!${params.column}${params.userRow}`;
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range,
+    });
+    const v = response.data.values?.[0]?.[0];
+    return parseCellToMoneyInfo(v);
+  }
+
+  async function isCellEmpty(params: {
+    column: string;
+    row: number;
+  }): Promise<boolean> {
+    const range = `'${SHEET_NAME}'!${params.column}${params.row}`;
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range,
+    });
+    const v = response.data.values?.[0]?.[0];
+    return v == null || String(v).trim() === '';
+  }
+
+  async function getNextDateColumnInfo(params: {
+    lastDateColumn: string;
+    userRow: number;
+  }): Promise<{
+    nextColumn: string;
+    headerEmpty: boolean;
+    userCellEmpty: boolean;
+  }> {
+    const nextColumn = getNextColumnLetter(params.lastDateColumn);
+    const [headerRes, userRes] = await Promise.all([
+      sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `'${SHEET_NAME}'!${nextColumn}${SHEET_DATE_ROW}`,
+      }),
+      sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `'${SHEET_NAME}'!${nextColumn}${params.userRow}`,
+      }),
+    ]);
+    const hv = headerRes.data.values?.[0]?.[0];
+    const uv = userRes.data.values?.[0]?.[0];
+    return {
+      nextColumn,
+      headerEmpty: hv == null || String(hv).trim() === '',
+      userCellEmpty: uv == null || String(uv).trim() === '',
+    };
+  }
+
+  async function writeMoneyToCell(
+    column: string,
+    userRow: number,
+    amount: number,
+  ): Promise<void> {
+    const range = `'${SHEET_NAME}'!${column}${userRow}`;
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: {
+        valueInputOption: 'RAW',
+        data: [{ range, values: [[amount]] }],
+      },
+    });
+  }
+
   return {
     findNicknameRows,
     checkExistingValues,
@@ -437,5 +590,13 @@ export async function createGoogleSheetsClient(): Promise<SheetsClient> {
     findColumnByDateText,
     getColumnMetadata,
     writeColumnMetadata,
+    findUserRowByTg,
+    isTelegramUsernameInSheet,
+    findFirstRowWithEmptyNameAndTg,
+    writeRegisterRow,
+    getMoneyUserCellInfo,
+    isCellEmpty,
+    getNextDateColumnInfo,
+    writeMoneyToCell,
   };
 }
