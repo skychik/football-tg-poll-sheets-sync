@@ -1,13 +1,16 @@
 import { handleApiError, replyErrorAndReset } from '../bot-helpers';
 import {
+  ERR_MONEY_BUTTON_OUTDATED,
   ERR_MONEY_CELL_CHANGED_SINCE_READ,
+  ERR_MONEY_SESSION_LOST,
+  ERR_MONEY_SESSION_LOST_RESTART,
   ERR_MONEY_VALUE,
   ERR_NO_TG_USERNAME,
   ERR_SESSION_DATA_LOST,
   MONEY_MAX_AMOUNT,
+  MSG_CANCELLED,
   SHEET_MONEY_REMAINING_ROW,
 } from '../constants';
-import type { MoneyUserCellState } from '../sheets/sheets-types';
 import {
   moneyColumnKeyboard,
   moneyEmptyCellKeyboard,
@@ -16,6 +19,8 @@ import {
 } from '../keyboards';
 import type { MyContext } from '../session';
 import { resetSession } from '../session';
+import type { MoneyUserCellState } from '../sheets/sheets-types';
+import { escapeMarkdownV2, replyMarkdownV2 } from '../telegram/markdown-v2';
 
 /**
  * Start `/money` or plain-number flow: only call when you want a full reset of money state first.
@@ -78,18 +83,22 @@ export function parseAmountFromString(raw: string): number | null {
  */
 export async function beginMoneyCommand(ctx: MyContext): Promise<void> {
   if (ctx.chat?.type !== 'private') {
-    await ctx.reply('This command only works in a private chat with the bot.');
+    await replyMarkdownV2(
+      ctx,
+      'This command only works in a *private chat* with the bot\\.',
+    );
     return;
   }
   resetForNewMoneySession(ctx);
   if (!ctx.from?.username) {
-    await ctx.reply(ERR_NO_TG_USERNAME);
+    await replyMarkdownV2(ctx, ERR_NO_TG_USERNAME);
     return;
   }
   ctx.session.moneyTgKey = `@${ctx.from.username}`;
   ctx.session.state = 'awaiting_money_amount';
-  await ctx.reply(
-    'How much? Send a number between 1 and 20,000 (this replaces your cell in the sheet).',
+  await replyMarkdownV2(
+    ctx,
+    '*How much* did you pay? Send the amount as a *number*\\.',
   );
 }
 
@@ -102,15 +111,15 @@ export async function startMoneyWithParsedAmount(
   resetFirst: boolean = true,
 ): Promise<void> {
   if (ctx.chat?.type !== 'private') {
-    await ctx.reply('This only works in private chat.');
+    await replyMarkdownV2(ctx, 'This only works in *private chat*\\.');
     return;
   }
   if (!ctx.from?.username) {
-    await ctx.reply(ERR_NO_TG_USERNAME);
+    await replyMarkdownV2(ctx, ERR_NO_TG_USERNAME);
     return;
   }
   if (!validateMoneyAmount(amount)) {
-    await ctx.reply(ERR_MONEY_VALUE);
+    await replyMarkdownV2(ctx, ERR_MONEY_VALUE);
     return;
   }
   if (resetFirst) {
@@ -128,13 +137,13 @@ export async function handleAwaitingMoneyAmount(
     return false;
   }
   if (!ctx.from?.username) {
-    await ctx.reply(ERR_NO_TG_USERNAME);
+    await replyMarkdownV2(ctx, ERR_NO_TG_USERNAME);
     resetSession(ctx.session);
     return true;
   }
   const n = parseAmountFromString(text);
   if (n === null) {
-    await ctx.reply(ERR_MONEY_VALUE);
+    await replyMarkdownV2(ctx, ERR_MONEY_VALUE);
     return true;
   }
   ctx.session.moneyTgKey = `@${ctx.from.username}`;
@@ -181,9 +190,11 @@ async function continueMoneyAfterAmount(
     ctx.session.moneyResumeAfterRegister = true;
     ctx.session.registerAtUsername = atKey;
     ctx.session.state = 'awaiting_register_name';
-    await ctx.reply(
-      `You are not in the table yet, so I cannot find your row.\n\n` +
-        `Send the name to put in column A (I will add @${ctx.from?.username} in column B).`,
+    const un = escapeMarkdownV2(ctx.from?.username ?? '');
+    await replyMarkdownV2(
+      ctx,
+      `You are *not in the table* yet, so I cannot find your row\\.\n\n` +
+        `Send the name to put in column *A* \\(I will add *@${un}* in column *B*\\)\\.`,
     );
   } catch (e) {
     await handleApiError(ctx, e, 'looking up your row');
@@ -192,15 +203,12 @@ async function continueMoneyAfterAmount(
 
 export async function showMoneyColumnChoice(ctx: MyContext): Promise<void> {
   if (!ctx.session.moneyAmount) {
-    await replyErrorAndReset(
-      ctx,
-      'Session lost. Start again with /money or send a number.',
-    );
+    await replyErrorAndReset(ctx, ERR_MONEY_SESSION_LOST_RESTART);
     return;
   }
   const atKey = ctx.session.moneyTgKey ?? `@${ctx.from?.username ?? ''}`;
   if (!atKey) {
-    await ctx.reply(ERR_NO_TG_USERNAME);
+    await replyMarkdownV2(ctx, ERR_NO_TG_USERNAME);
     resetSession(ctx.session);
     return;
   }
@@ -209,15 +217,19 @@ export async function showMoneyColumnChoice(ctx: MyContext): Promise<void> {
     const sheets = await ctx.services.createSheetsClient();
     const last = await sheets.findLastDateColumn();
     if (!last) {
-      await ctx.reply(
-        '❌ No date columns found in the sheet. Use /update first.',
+      await replyMarkdownV2(
+        ctx,
+        '❌ *No date columns* found in the sheet\\. Use */update* first\\.',
       );
       resetSession(ctx.session);
       return;
     }
     const row = await sheets.findUserRowByTg(atKey);
     if (row === null) {
-      await ctx.reply('❌ Still cannot find your row. Try /register first.');
+      await replyMarkdownV2(
+        ctx,
+        '❌ Still cannot find your row\\. Try */register* first\\.',
+      );
       resetSession(ctx.session);
       return;
     }
@@ -229,13 +241,19 @@ export async function showMoneyColumnChoice(ctx: MyContext): Promise<void> {
     ctx.session.moneyNextColumn = next;
     ctx.session.state = 'awaiting_money_column_choice';
 
-    await ctx.reply(
-      `You want to write **${ctx.session.moneyAmount}** (replaces your cell).\n\n` +
-        `Last date column: **${last.column}** — ${last.date}\n` +
-        `Next column: **${next}** (must have empty date header and empty cell in your row)\n\n` +
-        `Where should I write?`,
+    const amt = ctx.session.moneyAmount;
+    if (amt == null) {
+      await replyErrorAndReset(ctx, ERR_SESSION_DATA_LOST);
+      return;
+    }
+    await replyMarkdownV2(
+      ctx,
+      `When did you pay *${escapeMarkdownV2(String(amt))}*?` +
+        '\\.\n\n' +
+        `*Last date column:* *${escapeMarkdownV2(last.column)}* — ${escapeMarkdownV2(last.date)}\n` +
+        `*Next column:* *${escapeMarkdownV2(next)}* \\(must have empty date header and empty cell in your row\\)\n\n` +
+        `*Where should I write?*`,
       {
-        parse_mode: 'Markdown',
         reply_markup: moneyColumnKeyboard(last.column, last.date, next),
       },
     );
@@ -272,11 +290,11 @@ async function runPreWriteFromColumn(
       const display =
         info.displayText ??
         (info.numericValue != null ? String(info.numericValue) : '?');
-      await ctx.reply(
-        `This cell already has: **${display}**\n\n` +
-          `I will **replace** it with **${amount}**. OK?`,
+      await replyMarkdownV2(
+        ctx,
+        `This cell already has: *${escapeMarkdownV2(display)}*\n\n` +
+          `I will *replace* it with *${escapeMarkdownV2(String(amount))}*\\. OK?`,
         {
-          parse_mode: 'Markdown',
           reply_markup: moneyReplaceKeyboard(),
         },
       );
@@ -284,11 +302,11 @@ async function runPreWriteFromColumn(
     }
     if (info.cell === 'empty') {
       s.state = 'awaiting_money_not_in_poll_confirm';
-      await ctx.reply(
-        `Your cell in column **${column}** is **empty** — you may not have been in the poll for this day (or the wrong column).\n\n` +
-          `Add **${amount}** here anyway?`,
+      await replyMarkdownV2(
+        ctx,
+        `Your cell in column *${escapeMarkdownV2(column)}* is *empty* — you may not have been in the poll for this day \\(or the wrong column\\)\\.\n\n` +
+          `Add *${escapeMarkdownV2(String(amount))}* here anyway?`,
         {
-          parse_mode: 'Markdown',
           reply_markup: moneyEmptyCellKeyboard(),
         },
       );
@@ -299,11 +317,11 @@ async function runPreWriteFromColumn(
       await doMoneyWrite(ctx);
     } else {
       s.state = 'awaiting_money_row4_confirm';
-      await ctx.reply(
-        'Column row 4 (remaining to collect) is **empty** — the group may have finished collecting, or the column is not set up.\n\n' +
-          `Write **${amount}** anyway?`,
+      await replyMarkdownV2(
+        ctx,
+        `Column row 4 \\(remaining to collect\\) is *empty* — the group may have finished collecting, or the column is not set up\\.\n\n` +
+          `Write *${escapeMarkdownV2(String(amount))}* anyway?`,
         {
-          parse_mode: 'Markdown',
           reply_markup: moneyRow4Keyboard(),
         },
       );
@@ -316,10 +334,7 @@ async function runPreWriteFromColumn(
 export async function onMoneyCallbackColumnLast(ctx: MyContext): Promise<void> {
   const c = ctx.session.moneyLastDateColumn;
   if (!c || ctx.session.state !== 'awaiting_money_column_choice') {
-    await replyErrorAndReset(
-      ctx,
-      'This button is out of date. Use /money again.',
-    );
+    await replyErrorAndReset(ctx, ERR_MONEY_BUTTON_OUTDATED);
     return;
   }
   await runPreWriteFromColumn(ctx, c);
@@ -328,16 +343,13 @@ export async function onMoneyCallbackColumnLast(ctx: MyContext): Promise<void> {
 export async function onMoneyCallbackColumnNext(ctx: MyContext): Promise<void> {
   const s = ctx.session;
   if (s.state !== 'awaiting_money_column_choice' || !s.moneyNextColumn) {
-    await replyErrorAndReset(
-      ctx,
-      'This button is out of date. Use /money again.',
-    );
+    await replyErrorAndReset(ctx, ERR_MONEY_BUTTON_OUTDATED);
     return;
   }
   const lastCol = s.moneyLastDateColumn;
   const row = s.moneyUserSheetRow;
   if (!lastCol || row == null) {
-    await replyErrorAndReset(ctx, 'Session data lost. Use /money again.');
+    await replyErrorAndReset(ctx, ERR_MONEY_SESSION_LOST);
     return;
   }
 
@@ -348,17 +360,17 @@ export async function onMoneyCallbackColumnNext(ctx: MyContext): Promise<void> {
       userRow: row,
     });
     if (!nextInfo.headerEmpty) {
-      await ctx.reply(
-        `❌ Next column **${nextInfo.nextColumn}** is not free: the date cell (row 1) is not empty. Pick another time or add a new column in the sheet.`,
-        { parse_mode: 'Markdown' },
+      await replyMarkdownV2(
+        ctx,
+        `❌ *Next column* *${escapeMarkdownV2(nextInfo.nextColumn)}* is not free: the date cell \\(row *1*\\) is not empty\\. Pick another time or add a new column in the sheet\\.`,
       );
       resetSession(s);
       return;
     }
     if (!nextInfo.userCellEmpty) {
-      await ctx.reply(
-        `❌ Your cell in column **${nextInfo.nextColumn}** is not empty. I will not overwrite it.`,
-        { parse_mode: 'Markdown' },
+      await replyMarkdownV2(
+        ctx,
+        `❌ Your cell in column *${escapeMarkdownV2(nextInfo.nextColumn)}* is not empty\\. I will *not* overwrite it\\.`,
       );
       resetSession(s);
       return;
@@ -377,14 +389,14 @@ export async function onMoneyReplaceCallback(
     return;
   }
   if (!ok) {
-    await ctx.reply('Cancelled.');
+    await replyMarkdownV2(ctx, MSG_CANCELLED);
     resetSession(ctx.session);
     return;
   }
   const col = ctx.session.moneyWriteColumn;
   const row = ctx.session.moneyUserSheetRow;
   if (!col || row == null) {
-    await replyErrorAndReset(ctx, 'Session lost. Use /money again.');
+    await replyErrorAndReset(ctx, ERR_MONEY_SESSION_LOST);
     return;
   }
   try {
@@ -397,11 +409,16 @@ export async function onMoneyReplaceCallback(
       await doMoneyWrite(ctx);
     } else {
       ctx.session.state = 'awaiting_money_row4_confirm';
-      await ctx.reply(
-        'Column row 4 (remaining to collect) is **empty** — the group may have finished collecting.\n\n' +
-          `Write **${ctx.session.moneyAmount}** anyway?`,
+      const wAmt = ctx.session.moneyAmount;
+      if (wAmt == null) {
+        await replyErrorAndReset(ctx, ERR_SESSION_DATA_LOST);
+        return;
+      }
+      await replyMarkdownV2(
+        ctx,
+        `Column row 4 \\(remaining to collect\\) is *empty* — the group may have finished collecting\\.\n\n` +
+          `Write *${escapeMarkdownV2(String(wAmt))}* anyway?`,
         {
-          parse_mode: 'Markdown',
           reply_markup: moneyRow4Keyboard(),
         },
       );
@@ -419,14 +436,14 @@ export async function onMoneyEmptyPollCallback(
     return;
   }
   if (!writeAnyway) {
-    await ctx.reply('Cancelled.');
+    await replyMarkdownV2(ctx, MSG_CANCELLED);
     resetSession(ctx.session);
     return;
   }
   const col = ctx.session.moneyWriteColumn;
   const row = ctx.session.moneyUserSheetRow;
   if (!col || row == null) {
-    await replyErrorAndReset(ctx, 'Session lost. Use /money again.');
+    await replyErrorAndReset(ctx, ERR_MONEY_SESSION_LOST);
     return;
   }
   try {
@@ -439,12 +456,15 @@ export async function onMoneyEmptyPollCallback(
       await doMoneyWrite(ctx);
     } else {
       ctx.session.state = 'awaiting_money_row4_confirm';
-      await ctx.reply(
-        'Row 4 in this column is **empty** (collection may be complete). Write **' +
-          String(ctx.session.moneyAmount) +
-          '** anyway?',
+      const wAmt2 = ctx.session.moneyAmount;
+      if (wAmt2 == null) {
+        await replyErrorAndReset(ctx, ERR_SESSION_DATA_LOST);
+        return;
+      }
+      await replyMarkdownV2(
+        ctx,
+        `Row *4* in this column is *empty* \\(collection may be complete\\)\\. Write *${escapeMarkdownV2(String(wAmt2))}* anyway?`,
         {
-          parse_mode: 'Markdown',
           reply_markup: moneyRow4Keyboard(),
         },
       );
@@ -462,7 +482,7 @@ export async function onMoneyRow4Callback(
     return;
   }
   if (!writeAnyway) {
-    await ctx.reply('Cancelled.');
+    await replyMarkdownV2(ctx, MSG_CANCELLED);
     resetSession(ctx.session);
     return;
   }
@@ -491,7 +511,10 @@ export async function tryHandleMoneyBlockedPlainText(
   if (ctx.message.text.trim().startsWith('/')) {
     return false;
   }
-  await ctx.reply('Use the inline buttons, or send /cancel to stop.');
+  await replyMarkdownV2(
+    ctx,
+    'Use the *inline buttons*, or send */cancel* to stop\\.',
+  );
   return true;
 }
 
@@ -501,11 +524,11 @@ export async function doMoneyWrite(ctx: MyContext): Promise<void> {
   const row = s.moneyUserSheetRow;
   const amount = s.moneyAmount;
   if (!col || row == null || amount == null) {
-    await replyErrorAndReset(ctx, 'Session lost. Use /money again.');
+    await replyErrorAndReset(ctx, ERR_MONEY_SESSION_LOST);
     return;
   }
   if (s.moneyOldCellValue === undefined) {
-    await replyErrorAndReset(ctx, 'Session lost. Use /money again.');
+    await replyErrorAndReset(ctx, ERR_MONEY_SESSION_LOST);
     return;
   }
   const expected = s.moneyOldCellValue;
@@ -513,15 +536,18 @@ export async function doMoneyWrite(ctx: MyContext): Promise<void> {
     const sheets = await ctx.services.createSheetsClient();
     // Re-check against last read: Sheet API has no per-cell compare-and-swap; we
     // avoid clobbering if another process changed the cell after confirmation.
-    const now = await sheets.getMoneyUserCellInfo({ column: col, userRow: row });
+    const now = await sheets.getMoneyUserCellInfo({
+      column: col,
+      userRow: row,
+    });
     if (moneyCellReadSnapshot(now) !== expected) {
       await replyErrorAndReset(ctx, ERR_MONEY_CELL_CHANGED_SINCE_READ);
       return;
     }
     await sheets.writeMoneyToCell(col, row, amount);
-    await ctx.reply(
-      `Done: wrote **${amount}** to column **${col}** row **${row}** (replaced the cell).`,
-      { parse_mode: 'Markdown' },
+    await replyMarkdownV2(
+      ctx,
+      `✅ *Done:* wrote *${escapeMarkdownV2(String(amount))}* to column *${escapeMarkdownV2(col)}* row *${escapeMarkdownV2(String(row))}*\\.`,
     );
   } catch (e) {
     await handleApiError(ctx, e, 'writing to the sheet');

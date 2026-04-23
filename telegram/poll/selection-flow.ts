@@ -5,6 +5,7 @@ import { getPollById, type PollData } from '../../poll-domain';
 import type { MyContext } from '../../session';
 import { resetSession } from '../../session';
 import { startColumnDetectionFlow } from '../../workflow/column-detection';
+import { escapeMarkdownV2 } from '../markdown-v2';
 
 /**
  * Build poll options text with vote counts
@@ -13,7 +14,10 @@ export function buildPollOptionsText(pollData: PollData): string {
   let optionsText = '';
   pollData.options.forEach((option, index) => {
     const voters = pollData.votes.get(index) || new Set();
-    optionsText += `${index + 1}. ${option} (${voters.size} vote${voters.size !== 1 ? 's' : ''})\n`;
+    const esc = escapeMarkdownV2(option);
+    const v = voters.size;
+    const voteWord = v === 1 ? 'vote' : 'votes';
+    optionsText += `*${index + 1}\\.* ${esc} \\(${v} ${voteWord}\\)\n`;
   });
   return optionsText;
 }
@@ -30,32 +34,34 @@ export async function getPollDataOrError(
   if (!pollId) {
     await replyErrorAndReset(
       ctx,
-      '❌ Error: poll data lost. Please forward the poll again.',
+      '❌ *Error:* poll data lost\\. Please forward the poll again\\.',
     );
     return null;
   }
 
   const pollData = await getPollById(pollId, ctx.services.pollStorage);
   if (!pollData) {
-    await replyErrorAndReset(ctx, '❌ Error: poll data not found.');
+    await replyErrorAndReset(ctx, '❌ *Error:* poll data not found\\.');
     return null;
   }
 
   return { pollId, pollData };
 }
 
-const OPTION_PROMPT_INTRO = 'Which option contains the attending players?\n\n';
+const OPTION_PROMPT_INTRO =
+  'Which option contains the *attending players*?\\.\n\n';
 
 function messageForPollOptionPrompt(pollData: PollData): string {
   return OPTION_PROMPT_INTRO + buildPollOptionsText(pollData);
 }
 
 function formatPollVotersListing(pollData: PollData): string {
-  let response = `📊 Poll: "${pollData.question}"\n\n`;
+  let response = `📊 *Poll:* _${escapeMarkdownV2(pollData.question)}_\n\n`;
   pollData.options.forEach((option, index) => {
     const voters = pollData.votes.get(index) || new Set();
-    const voterList = Array.from(voters).join(' ');
-    response += `${index + 1}. ${option}: ${voterList || '(no votes)'}\n`;
+    const voterList = Array.from(voters).map(escapeMarkdownV2).join(', ');
+    const escOpt = escapeMarkdownV2(option);
+    response += `*${index + 1}\\.* ${escOpt}: ${voterList || '\\(no votes\\)'}\n`;
   });
   return response;
 }
@@ -65,13 +71,14 @@ export async function enterPollOptionSelection(
   pollData: PollData,
   deliver: (
     text: string,
-    extra: { reply_markup: InlineKeyboard },
+    extra: { reply_markup: InlineKeyboard; parse_mode?: string },
   ) => Promise<unknown>,
 ): Promise<void> {
   ctx.session.state = 'awaiting_poll_option_selection';
   const text = messageForPollOptionPrompt(pollData);
   await deliver(text, {
     reply_markup: pollOptionKeyboard(pollData.options, pollData.votes),
+    parse_mode: 'MarkdownV2',
   });
 }
 
@@ -87,7 +94,7 @@ export async function applyPollOptionSelectionAndStartUpdate(
 ): Promise<boolean> {
   if (optionIndex < 0 || optionIndex >= pollData.options.length) {
     await notify(
-      `❌ Invalid option number. Please choose between 1 and ${pollData.options.length}.`,
+      `❌ *Invalid option number\\.* Please choose between *1* and *${pollData.options.length}*\\.`,
     );
     return false;
   }
@@ -96,7 +103,7 @@ export async function applyPollOptionSelectionAndStartUpdate(
   const usernames = Array.from(voters);
 
   if (usernames.length === 0) {
-    await replyErrorAndReset(ctx, '❌ No voters found for this option.');
+    await replyErrorAndReset(ctx, '❌ *No voters found* for this option\\.');
     return false;
   }
 
@@ -104,9 +111,10 @@ export async function applyPollOptionSelectionAndStartUpdate(
   ctx.session.pollId = undefined;
   ctx.session.pollQuestion = undefined;
 
+  const optLabel = escapeMarkdownV2(pollData.options[optionIndex]);
+  const players = usernames.map(escapeMarkdownV2).join(', ');
   await notify(
-    `✅ Selected option: "${pollData.options[optionIndex]}"\n` +
-      `👥 Attending players: ${usernames.join(' ')}`,
+    `*Selected option:* _${optLabel}_\n` + `👥 *Attending players:* ${players}`,
   );
 
   await startColumnDetectionFlow(ctx);

@@ -3,6 +3,7 @@ import { ERR_TARGET_COLUMN_NOT_SET } from '../constants';
 import { overrideConfirmationKeyboard } from '../keyboards';
 import type { MyContext } from '../session';
 import { resetSession } from '../session';
+import { escapeMarkdownV2, replyMarkdownV2 } from '../telegram/markdown-v2';
 
 function briefErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown error';
@@ -15,7 +16,10 @@ async function notifySheetUpdateFailure(
 ): Promise<void> {
   console.error(`[${logLabel}]`, error);
   resetSession(ctx.session);
-  await ctx.reply(`❌ Failed to update sheet: ${briefErrorMessage(error)}`);
+  await replyMarkdownV2(
+    ctx,
+    `❌ *Failed to update sheet:* ${escapeMarkdownV2(briefErrorMessage(error))}`,
+  );
 }
 
 /**
@@ -46,13 +50,14 @@ export async function checkOverridesAndWrite(
       ctx.session.existingValuesEntries = existingValues;
       ctx.session.state = 'awaiting_override_confirmation';
 
-      let message = `⚠️ These users already have values in column ${column}:\n\n`;
+      const colEsc = escapeMarkdownV2(column);
+      let message = `⚠️ These users already have values in column *${colEsc}*:\n\n`;
       existingValues.forEach((ev) => {
-        message += `• ${ev.nickname}: ${ev.value}\n`;
+        message += `• ${escapeMarkdownV2(ev.nickname)}: ${escapeMarkdownV2(String(ev.value))}\n`;
       });
-      message += `\nWhat would you like to do?`;
+      message += `\n*What would you like to do?*`;
 
-      await ctx.reply(message, {
+      await replyMarkdownV2(ctx, message, {
         reply_markup: overrideConfirmationKeyboard(),
       });
     } else {
@@ -74,7 +79,7 @@ export async function writeZerosAndRespond(
   overrideExisting: boolean,
   skippedNicknames: string[],
 ): Promise<void> {
-  await ctx.reply('⏳ Updating sheet...');
+  await replyMarkdownV2(ctx, '⏳ *Updating sheet*\\.\\.\\.');
 
   try {
     const sheetsClient = await ctx.services.createSheetsClient();
@@ -109,7 +114,7 @@ export async function writeZerosAndRespond(
       notFoundNicknames,
     );
 
-    await ctx.reply(response);
+    await replyMarkdownV2(ctx, response);
     resetSession(ctx.session);
   } catch (error) {
     await notifySheetUpdateFailure(ctx, error, 'writeZerosAndRespond');

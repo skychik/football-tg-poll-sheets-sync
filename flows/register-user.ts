@@ -2,6 +2,7 @@ import { handleApiError } from '../bot-helpers';
 import { ERR_NO_TG_USERNAME } from '../constants';
 import type { MyContext } from '../session';
 import { resetSession } from '../session';
+import { escapeMarkdownV2, replyMarkdownV2 } from '../telegram/markdown-v2';
 import { showMoneyColumnChoice } from './money-flow';
 
 let registerWriteMutex: Promise<void> = Promise.resolve();
@@ -28,19 +29,26 @@ export async function handleRegisterCommand(
   textAfterCommand: string,
 ): Promise<void> {
   if (ctx.chat?.type !== 'private') {
-    await ctx.reply('Use /register in a private chat with the bot.');
+    await replyMarkdownV2(
+      ctx,
+      'Use */register* in a *private chat* with the bot\\.',
+    );
     return;
   }
   if (!ctx.from?.username) {
-    await ctx.reply(ERR_NO_TG_USERNAME);
+    await replyMarkdownV2(ctx, ERR_NO_TG_USERNAME);
     return;
   }
   const atTg = `@${ctx.from.username}`;
 
   try {
     const sheets = await ctx.services.createSheetsClient();
-    if (await sheets.isTelegramUsernameInSheet(atTg)) {
-      await ctx.reply(`You are already in the table: ${atTg}`);
+    const existingRow = await sheets.findUserRowByTg(atTg);
+    if (existingRow !== null) {
+      await replyMarkdownV2(
+        ctx,
+        `You are already in the table: *${escapeMarkdownV2(atTg)}* at row *${existingRow}*\\.`,
+      );
       return;
     }
     const name = textAfterCommand.trim();
@@ -50,8 +58,9 @@ export async function handleRegisterCommand(
       ctx.session.state = 'awaiting_register_name';
       ctx.session.registerAtUsername = atTg;
       ctx.session.moneyResumeAfterRegister = false;
-      await ctx.reply(
-        'Send the name to put in column A (I will add your @username in column B).',
+      await replyMarkdownV2(
+        ctx,
+        'Send the *name* to put in column *A* \\(I will add your *@username* in column *B*\\)\\.',
       );
     }
   } catch (e) {
@@ -69,15 +78,16 @@ export async function doRegisterUser(
 ): Promise<void> {
   const name = displayName.trim();
   if (name.length === 0) {
-    await ctx.reply('❌ Name cannot be empty.');
+    await replyMarkdownV2(ctx, '❌ *Name* cannot be empty\\.');
     return;
   }
 
   try {
     const sheets = await ctx.services.createSheetsClient();
     const registration = await withRegisterWriteMutex(async () => {
-      if (await sheets.isTelegramUsernameInSheet(atTg)) {
-        return { status: 'exists' as const };
+      const existingRow = await sheets.findUserRowByTg(atTg);
+      if (existingRow !== null) {
+        return { status: 'exists' as const, row: existingRow };
       }
       const row = await sheets.findFirstRowWithEmptyNameAndTg();
       if (row === null) {
@@ -88,7 +98,10 @@ export async function doRegisterUser(
     });
 
     if (registration.status === 'exists') {
-      await ctx.reply(`You are already in the table: ${atTg}`);
+      await replyMarkdownV2(
+        ctx,
+        `You are already in the table: *${escapeMarkdownV2(atTg)}* at row *${registration.row}*\\.`,
+      );
       if (mode === 'from_money') {
         await showMoneyColumnChoice(ctx);
       } else {
@@ -97,8 +110,9 @@ export async function doRegisterUser(
       return;
     }
     if (registration.status === 'no_free_row') {
-      await ctx.reply(
-        '❌ No free row: could not find a row with empty A and B (from row 7).',
+      await replyMarkdownV2(
+        ctx,
+        '❌ *No free row:* could not find a row with empty *A* and *B* \\(from row *7*\\)\\.',
       );
       resetSession(ctx.session);
       return;
@@ -107,12 +121,16 @@ export async function doRegisterUser(
     const row = registration.row;
     if (mode === 'from_money') {
       ctx.session.moneyResumeAfterRegister = false;
-      await ctx.reply(
-        `Added ${name} / ${atTg} at row ${row}.\n\nContinuing with your payment…`,
+      await replyMarkdownV2(
+        ctx,
+        `✅ Added *${escapeMarkdownV2(name)}* / *${escapeMarkdownV2(atTg)}* at row *${row}*\\.\n\nContinuing with your payment\\.\\.\\.`,
       );
       await showMoneyColumnChoice(ctx);
     } else {
-      await ctx.reply(`Done: ${name} / ${atTg} at row ${row}.`);
+      await replyMarkdownV2(
+        ctx,
+        `✅ *Done:* ${escapeMarkdownV2(name)} / ${escapeMarkdownV2(atTg)} at row *${row}*\\.`,
+      );
       resetSession(ctx.session);
     }
   } catch (e) {
@@ -128,7 +146,7 @@ export async function handleAwaitingRegisterName(
     return false;
   }
   if (!ctx.from?.username) {
-    await ctx.reply(ERR_NO_TG_USERNAME);
+    await replyMarkdownV2(ctx, ERR_NO_TG_USERNAME);
     resetSession(ctx.session);
     return true;
   }

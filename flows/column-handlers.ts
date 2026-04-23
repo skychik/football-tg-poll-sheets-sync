@@ -9,6 +9,7 @@ import {
 import { columnSelectionKeyboard } from '../keyboards';
 import type { MyContext } from '../session';
 import { resetSession } from '../session';
+import { escapeMarkdownV2, replyMarkdownV2 } from '../telegram/markdown-v2';
 import { proceedWithMetadataCollection } from '../workflow/metadata-flow';
 
 /**
@@ -18,8 +19,9 @@ async function askForDateName(ctx: MyContext, column: string): Promise<void> {
   ctx.session.targetColumn = column;
   ctx.session.isNewColumn = true;
   ctx.session.state = 'awaiting_date_name';
-  await ctx.reply(
-    `📅 Please provide the date name for column ${column} (row 1):`,
+  await replyMarkdownV2(
+    ctx,
+    `📅 Please provide the *date name* for column *${escapeMarkdownV2(column)}* \\(row *1*\\):`,
   );
 }
 
@@ -73,9 +75,10 @@ export async function handleColumnConfirmation(
 
     if (!result.success) {
       if (result.error === 'not_found') {
-        await ctx.reply(
-          `❌ No column found with date text "${trimmedText}".\n\n` +
-            `Please try again with a different date text, column letter, or answer yes/no.`,
+        await replyMarkdownV2(
+          ctx,
+          `❌ No column found with date text _${escapeMarkdownV2(trimmedText)}_.\n\n` +
+            'Please try again with a different date text, column letter, or answer *yes/no*\\.',
         );
         return true;
       }
@@ -85,9 +88,11 @@ export async function handleColumnConfirmation(
         ctx.session.columnMatches = result.matches;
         ctx.session.state = 'awaiting_column_selection';
 
-        const message = `📋 Multiple columns found matching "${trimmedText}":\n\nSelect one:`;
+        const message =
+          `📋 Multiple columns found matching _${escapeMarkdownV2(trimmedText)}_:\n\n` +
+          '*Select one:*';
 
-        await ctx.reply(message, {
+        await replyMarkdownV2(ctx, message, {
           reply_markup: columnSelectionKeyboard(result.matches),
         });
         return true;
@@ -107,9 +112,10 @@ export async function handleColumnConfirmation(
   }
 
   // If we get here, input wasn't recognized
-  await ctx.reply(
+  await replyMarkdownV2(
+    ctx,
     `${ERR_INVALID_YES_NO}\n\n` +
-      `You can also type a column letter (e.g., "F", "G") or date text to search.`,
+      'You can also type a column letter \\(e\\.g\\., "F", "G"\\) or date text to search\\.',
   );
   return true;
 }
@@ -128,7 +134,7 @@ export async function handleNewColumnChoice(
   const answer = parseYesNo(text);
 
   if (answer === null) {
-    await ctx.reply(ERR_INVALID_YES_NO);
+    await replyMarkdownV2(ctx, ERR_INVALID_YES_NO);
     return true;
   }
 
@@ -138,7 +144,10 @@ export async function handleNewColumnChoice(
     await askForDateName(ctx, column);
   } else {
     resetSession(ctx.session);
-    await ctx.reply(`✅ Operation cancelled. ${MSG_USE_UPDATE_AGAIN}`);
+    await replyMarkdownV2(
+      ctx,
+      `🚫 *Operation cancelled\\.* ${MSG_USE_UPDATE_AGAIN}`,
+    );
   }
 
   return true;
@@ -174,8 +183,9 @@ export async function handleColumnSelection(
       await proceedWithMetadataCollection(ctx);
       return true;
     } else {
-      await ctx.reply(
-        `❌ Invalid selection. Please choose a number between 1 and ${ctx.session.columnMatches.length}, or type a column letter.`,
+      await replyMarkdownV2(
+        ctx,
+        `❌ Invalid selection\\. Please choose a number between *1* and *${ctx.session.columnMatches.length}*, or type a column letter\\.`,
       );
       return true;
     }
@@ -195,16 +205,18 @@ export async function handleColumnSelection(
       await proceedWithMetadataCollection(ctx);
       return true;
     } else {
-      await ctx.reply(
-        `❌ Column ${columnLetter} is not in the list. Please choose from the options above.`,
+      await replyMarkdownV2(
+        ctx,
+        `❌ Column *${escapeMarkdownV2(columnLetter)}* is not in the list\\. Please choose from the options above\\.`,
       );
       return true;
     }
   }
 
   // Invalid input
-  await ctx.reply(
-    `❌ Please choose a column by typing its number (1-${ctx.session.columnMatches.length}) or column letter.`,
+  await replyMarkdownV2(
+    ctx,
+    `❌ Please choose a column by typing its number \\(1-${ctx.session.columnMatches.length}\\) or column letter\\.`,
   );
   return true;
 }
@@ -222,7 +234,7 @@ export async function handleDateName(
 
   const trimmed = rawText.trim();
   if (!trimmed || trimmed.length === 0) {
-    await ctx.reply('❌ Please provide a date name');
+    await replyMarkdownV2(ctx, '❌ Please provide a *date name*\\.');
     return true;
   }
 
@@ -230,10 +242,7 @@ export async function handleDateName(
 
   const targetColumn = ctx.session.targetColumn;
   if (!targetColumn) {
-    await replyErrorAndReset(
-      ctx,
-      '❌ Error: target column not set. Start over with /update',
-    );
+    await replyErrorAndReset(ctx, ERR_TARGET_COLUMN_NOT_SET);
     return true;
   }
 
@@ -263,7 +272,10 @@ export async function handleCost(
 
   const cost = parseFloat(text);
   if (Number.isNaN(cost) || cost < 0) {
-    await ctx.reply('❌ Please provide a valid positive number for the cost');
+    await replyMarkdownV2(
+      ctx,
+      '❌ Please provide a *valid positive number* for the cost\\.',
+    );
     return true;
   }
 
@@ -271,10 +283,7 @@ export async function handleCost(
 
   const targetColumn = ctx.session.targetColumn;
   if (!targetColumn) {
-    await replyErrorAndReset(
-      ctx,
-      '❌ Error: target column not set. Start over with /update',
-    );
+    await replyErrorAndReset(ctx, ERR_TARGET_COLUMN_NOT_SET);
     return true;
   }
 

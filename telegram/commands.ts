@@ -14,11 +14,12 @@ import type { PollStorage } from '../poll-storage/poll-storage-types';
 import type { MyContext } from '../session';
 import { resetSession } from '../session';
 import { startColumnDetectionFlow } from '../workflow/column-detection';
+import { escapeMarkdownV2, replyMarkdownV2 } from './markdown-v2';
 
 const POLL_USAGE_REPLY =
-  '❌ Please provide poll question and options.\n\n' +
-  'Usage: /poll Question? | Option1 | Option2 | Option3\n' +
-  'Separators: | or ; or newlines';
+  '❌ Please provide *poll question* and *options*\\.\n\n' +
+  '*Usage:* /poll Question? \\| Option1 \\| Option2 \\| Option3\n' +
+  '*Separators:* \\| or ; or newlines';
 
 /**
  * Register all slash command handlers (including `/poll`).
@@ -28,35 +29,37 @@ export function registerCommands(
   pollStorage: PollStorage,
 ): void {
   bot.command('start', async (ctx) => {
-    await ctx.reply(
-      `👋 Welcome to Football Poll Sheets Sync Bot!\n\n` +
-        `📖 Commands:\n` +
-        `• /poll - Create a trackable poll\n` +
-        `• /update - Update Google Sheet with attending players\n` +
-        `• /money - Record a payment in the sheet (replaces your cell)\n` +
-        `• /register - Add yourself to the table (A: name, B: @username)\n` +
-        `• /help - Show this help\n` +
-        `• /cancel or /abort - Cancel current operation\n\n` +
-        `💡 Tip: Forward a poll created by this bot to see voters or update the sheet!`,
+    await replyMarkdownV2(
+      ctx,
+      `👋 *Welcome* to *Football Poll Sheets Sync Bot*\\!\n\n` +
+        `📖 *Commands:*\n` +
+        `• */poll* — Create a trackable poll\n` +
+        `• */update* — Update Google Sheet with attending players\n` +
+        `• */money* — Record a payment in the sheet \\(replaces your cell\\)\n` +
+        `• */register* — Add yourself to the table \\(A: name, B: @username\\)\n` +
+        `• */help* — Show this help\n` +
+        `• */cancel* or */abort* — Cancel current operation\n\n` +
+        `💡 *Tip:* Forward a poll created by this bot to see voters or update the sheet\\!`,
     );
   });
 
   bot.command('help', async (ctx) => {
-    await ctx.reply(
-      `📖 Help:\n\n` +
-        `• /poll - Create a trackable poll\n` +
-        `• /update - Update Google Sheet with attending players\n` +
-        `• /money - Record a payment (private chat; you can also send 1–20000 as a number)\n` +
-        `• /register - Add yourself: name in column A, @username in column B\n` +
-        `• /help - Show this help\n` +
-        `• /cancel or /abort - Cancel current operation\n\n` +
-        `The bot will guide you through each flow step by step.`,
+    await replyMarkdownV2(
+      ctx,
+      `📖 *Help:*\n\n` +
+        `• */update* — Update Google Sheet with attending players\n` +
+        `• */poll* — Create a trackable poll\\. Forward it here to start */update*\n` +
+        `• */register* — Add yourself: name in column A, @username in column B\n` +
+        `• */money* — Record a payment \\(private chat; you can also send 1–20000 as a number\\)\n` +
+        `• */cancel* or */abort* — Cancel current operation\n` +
+        `• */help* — Show this help\n\n` +
+        `The bot will guide you through each flow *step by step*\\.`,
     );
   });
 
   bot.command('money', async (ctx) => {
     if (ctx.chat?.type !== 'private') {
-      await ctx.reply(ERR_MONEY_AND_REGISTER_PRIVATE_ONLY);
+      await replyMarkdownV2(ctx, ERR_MONEY_AND_REGISTER_PRIVATE_ONLY);
       return;
     }
     const text = ctx.message?.text;
@@ -70,7 +73,7 @@ export function registerCommands(
     }
     const n = parseAmountFromString(rest);
     if (n === null) {
-      await ctx.reply(ERR_MONEY_VALUE);
+      await replyMarkdownV2(ctx, ERR_MONEY_VALUE);
       return;
     }
     await startMoneyWithParsedAmount(ctx, n, true);
@@ -78,7 +81,7 @@ export function registerCommands(
 
   bot.command('register', async (ctx) => {
     if (ctx.chat?.type !== 'private') {
-      await ctx.reply(ERR_MONEY_AND_REGISTER_PRIVATE_ONLY);
+      await replyMarkdownV2(ctx, ERR_MONEY_AND_REGISTER_PRIVATE_ONLY);
       return;
     }
     const text = ctx.message?.text ?? '';
@@ -93,24 +96,30 @@ export function registerCommands(
 
   bot.command('cancel', async (ctx) => {
     resetSession(ctx.session);
-    await ctx.reply(`✅ Operation cancelled. ${MSG_USE_UPDATE_AGAIN}`);
+    await replyMarkdownV2(
+      ctx,
+      `🚫 *Operation cancelled\\.* ${MSG_USE_UPDATE_AGAIN}`,
+    );
   });
 
   bot.command('abort', async (ctx) => {
     resetSession(ctx.session);
-    await ctx.reply(`✅ Operation aborted. ${MSG_USE_UPDATE_AGAIN}`);
+    await replyMarkdownV2(
+      ctx,
+      `🚫 *Operation aborted\\.* ${MSG_USE_UPDATE_AGAIN}`,
+    );
   });
 
   bot.command('poll', async (ctx) => {
     const text = ctx.message?.text;
     if (!text) {
-      await ctx.reply(POLL_USAGE_REPLY);
+      await replyMarkdownV2(ctx, POLL_USAGE_REPLY);
       return;
     }
 
     const content = text.replace(/^\/poll(?:@\w+)?\b/i, '').trim();
     if (content === '') {
-      await ctx.reply(POLL_USAGE_REPLY);
+      await replyMarkdownV2(ctx, POLL_USAGE_REPLY);
       return;
     }
 
@@ -120,10 +129,11 @@ export function registerCommands(
       .filter((p) => p.length > 0);
 
     if (parts.length < 2) {
-      await ctx.reply(
-        '❌ Please provide at least a question and one option.\n\n' +
-          'Usage: /poll Question? | Option1 | Option2\n' +
-          'Separators: | or ; or newlines',
+      await replyMarkdownV2(
+        ctx,
+        '❌ Please provide at least a *question* and *one option*\\.\n\n' +
+          '*Usage:* /poll Question? \\| Option1 \\| Option2\n' +
+          '*Separators:* \\| or ; or newlines',
       );
       return;
     }
@@ -163,15 +173,17 @@ export function registerCommands(
           // Bot might not have delete permission, ignore
         }
       } else {
-        await ctx.reply(
-          '✅ Poll created! Forward it back to me to see voters or update the sheet.',
+        await replyMarkdownV2(
+          ctx,
+          '✅ *Poll created\\!* Forward it back to me to see voters or update the sheet\\.',
         );
       }
     } catch (error) {
       console.error('Error creating poll:', error);
-      await ctx.reply(
-        `❌ Error creating poll: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      const em = escapeMarkdownV2(
+        error instanceof Error ? error.message : 'Unknown error',
       );
+      await replyMarkdownV2(ctx, `❌ *Error creating poll:* ${em}`);
     }
   });
 }

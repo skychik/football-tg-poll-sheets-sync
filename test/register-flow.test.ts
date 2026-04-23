@@ -26,12 +26,12 @@ describe('/register', () => {
   test('replies when Telegram username already exists in column B', async () => {
     testKit.setSheetsClient(
       baseSheets({
-        isTelegramUsernameInSheet: async () => true,
+        findUserRowByTg: async () => 12,
       }),
     );
     const { bot, calls } = setupTestBot();
     await bot.handleUpdate(textMessageUpdate('/register'));
-    expectTexts(calls, ['already in the table'], 'sendMessage');
+    expectTexts(calls, ['already in the table', '12'], 'sendMessage');
   });
 
   test('with name in command writes first empty row A/B', async () => {
@@ -57,7 +57,10 @@ describe('/register', () => {
     const registered = new Set<string>();
     testKit.setSheetsClient(
       baseSheets({
-        isTelegramUsernameInSheet: async (at) => registered.has(at),
+        findUserRowByTg: async (at) => {
+          if (!registered.has(at)) return null;
+          return at === '@alice_test' ? 9 : 10;
+        },
         findFirstRowWithEmptyNameAndTg: async () => nextRow,
         writeRegisterRow: async (row, name, at) => {
           await new Promise((resolve) => setTimeout(resolve, 10));

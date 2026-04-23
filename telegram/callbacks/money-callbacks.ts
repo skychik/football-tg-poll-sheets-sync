@@ -1,4 +1,5 @@
 import type { Bot } from 'grammy';
+import { MSG_CANCELLED } from '../../constants';
 import {
   onMoneyCallbackColumnLast,
   onMoneyCallbackColumnNext,
@@ -8,6 +9,7 @@ import {
 } from '../../flows/money-flow';
 import { CallbackPrefix } from '../../keyboards';
 import type { MyContext } from '../../session';
+import { editMessageMarkdownV2 } from '../markdown-v2';
 
 /** Best-effort UI update; must not block money-flow state transitions. */
 async function tryEditMessageText(
@@ -16,11 +18,7 @@ async function tryEditMessageText(
   other?: object,
 ): Promise<void> {
   try {
-    if (other !== undefined) {
-      await ctx.editMessageText(text, other);
-    } else {
-      await ctx.editMessageText(text);
-    }
+    await editMessageMarkdownV2(ctx, text, other);
   } catch {
     // Message may be too old, already edited, or deleted.
   }
@@ -35,12 +33,12 @@ export function registerMoneyCallbackHandlers(bot: Bot<MyContext>): void {
     await ctx.answerCallbackQuery();
 
     if (data === 'col:last') {
-      await tryEditMessageText(ctx, '✅ Using last date column');
+      await tryEditMessageText(ctx, 'Using last date column');
       await onMoneyCallbackColumnLast(ctx);
       return;
     }
     if (data === 'col:next') {
-      await tryEditMessageText(ctx, '✅ Using next column');
+      await tryEditMessageText(ctx, 'Using next column');
       await onMoneyCallbackColumnNext(ctx);
       return;
     }
@@ -48,29 +46,29 @@ export function registerMoneyCallbackHandlers(bot: Bot<MyContext>): void {
       if (data === 'rp:yes') {
         await tryEditMessageText(
           ctx,
-          '✅ Confirmed: replace with new amount',
+          '*Confirmed:* replace with new amount',
           {},
         );
       } else {
-        await tryEditMessageText(ctx, '❌ Cancelled', {});
+        await tryEditMessageText(ctx, MSG_CANCELLED, {});
       }
       await onMoneyReplaceCallback(ctx, data === 'rp:yes');
       return;
     }
     if (data === 'em:yes' || data === 'em:no') {
       if (data === 'em:yes') {
-        await tryEditMessageText(ctx, '✅ Will add in this cell', {});
+        await tryEditMessageText(ctx, 'Will add in this cell', {});
       } else {
-        await tryEditMessageText(ctx, '❌ Cancelled', {});
+        await tryEditMessageText(ctx, MSG_CANCELLED, {});
       }
       await onMoneyEmptyPollCallback(ctx, data === 'em:yes');
       return;
     }
     if (data === 'r4:yes' || data === 'r4:no') {
       if (data === 'r4:yes') {
-        await tryEditMessageText(ctx, '✅ Will write to sheet', {});
+        await tryEditMessageText(ctx, 'Will write to sheet', {});
       } else {
-        await tryEditMessageText(ctx, '❌ Cancelled', {});
+        await tryEditMessageText(ctx, MSG_CANCELLED, {});
       }
       await onMoneyRow4Callback(ctx, data === 'r4:yes');
       return;

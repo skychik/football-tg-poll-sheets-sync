@@ -19,6 +19,7 @@ import {
   handleUsernames,
 } from '../flows/sheet-handlers';
 import type { MyContext } from '../session';
+import { replyMarkdownV2 } from './markdown-v2';
 import {
   handlePollIntent,
   handlePollOptionSelection,
@@ -56,6 +57,6 @@ export function registerMessageRouter(bot: Bot<MyContext>): void {
     if (await handlePlayerCount(ctx, text)) return;
     if (await handleOverrideConfirmation(ctx, text)) return;
 
-    await ctx.reply('👋 Use /start to begin updating a column.');
+    await replyMarkdownV2(ctx, '👋 Use */help* to see what I can do\\.');
   });
 }

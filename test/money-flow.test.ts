@@ -263,7 +263,7 @@ describe('/money', () => {
     await bot.handleUpdate(textMessageUpdate('/money 100'));
     const col = getLastBotMessage();
     await bot.handleUpdate(callbackQueryUpdate('mn:col:next', col as Message));
-    expectTexts(calls, ['is not empty. I will not overwrite'], 'sendMessage');
+    expectTexts(calls, ['is not empty', 'will not overwrite'], 'sendMessage');
   });
 
   test('next column: valid -> writes to next column (G)', async () => {
@@ -589,7 +589,9 @@ describe('parseAmountFromString', () => {
 
   test('accepts integer and decimal strings in range', () => {
     expect(parseAmountFromString('500')).toBe(500);
-    expect(parseAmountFromString(String(MONEY_MAX_AMOUNT))).toBe(MONEY_MAX_AMOUNT);
+    expect(parseAmountFromString(String(MONEY_MAX_AMOUNT))).toBe(
+      MONEY_MAX_AMOUNT,
+    );
     expect(parseAmountFromString('1.5')).toBe(1.5);
   });
 });

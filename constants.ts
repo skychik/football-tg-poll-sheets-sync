@@ -1,12 +1,12 @@
-// Error messages
+// Error messages (Telegram MarkdownV2)
 export const ERR_TARGET_COLUMN_NOT_SET =
-  '❌ Error: target column not set. Start over with /update';
+  '❌ *Error:* target column not set\\.\nStart over with /update';
 export const ERR_SESSION_DATA_LOST =
-  '❌ Error: session data lost. Start over with /update';
-export const ERR_INVALID_YES_NO = '❌ Please answer "yes" or "no"';
+  '❌ *Error:* session data lost\\.\nStart over with /update';
+export const ERR_INVALID_YES_NO = '❌ Please answer *yes* or *no*';
 
 // Recovery instructions
-export const MSG_USE_UPDATE_AGAIN = 'Use /update to begin again.';
+export const MSG_USE_UPDATE_AGAIN = 'Use /update to begin again\\.';
 
 // Google Sheets constants
 export const SHEET_NAME = 'Sheet1';
@@ -27,10 +27,19 @@ export const MONEY_MAX_AMOUNT = 20_000;
 
 // Messages
 export const ERR_MONEY_VALUE =
-  '❌ Value is incorrect. Send a number greater than 0 and at most 20,000.';
+  '❌ *Value is incorrect\\.* Send a number greater than *0* and at most *20,000*\\.';
 export const ERR_NO_TG_USERNAME =
-  '❌ You need a Telegram username in your Telegram account to use this.';
+  '❌ You need a *Telegram username* in your Telegram account to use this\\.';
 export const ERR_MONEY_AND_REGISTER_PRIVATE_ONLY =
-  '❌ /money and /register work only in a private chat with the bot. Open a DM to continue.';
+  '❌ */money* and */register* work only in a *private chat* with the bot\\. Open a DM to continue\\.';
 export const ERR_MONEY_CELL_CHANGED_SINCE_READ =
-  '❌ The cell in the sheet was changed after you started this step. I did not write, to avoid overwriting that update. Use /money to try again.';
+  '❌ The cell in the sheet was changed after you started this step\\. I did not write, to avoid overwriting that update\\. Use /money to try again\\.';
+
+// Shared flow messages
+export const MSG_CANCELLED = '🚫 Cancelled\\.';
+export const ERR_MONEY_SESSION_LOST = '*Session lost\\.* Use */money* again\\.';
+export const ERR_MONEY_SESSION_LOST_RESTART =
+  '*Session lost\\.* Start again with */money* or send a number\\.';
+export const ERR_MONEY_BUTTON_OUTDATED =
+  'This button is *out of date*\\. Use */money* again\\.';
+export const MSG_ASK_PLAYER_COUNT = '*How many players* attended the match?';

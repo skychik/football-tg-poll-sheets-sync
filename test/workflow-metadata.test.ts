@@ -3,6 +3,7 @@ import { ERR_TARGET_COLUMN_NOT_SET } from '../constants';
 import { proceedWithMetadataCollection } from '../workflow/metadata-flow';
 import { baseSheets } from './sheet-test-stub';
 import { makeMinimalWorkflowContext } from './support/minimal-context';
+import { normalizeTelegramText } from './support/test-assertions';
 
 describe('proceedWithMetadataCollection', () => {
   test('without targetColumn: error and no metadata fetch', async () => {
@@ -31,8 +32,9 @@ describe('proceedWithMetadataCollection', () => {
     await proceedWithMetadataCollection(ctx);
 
     expect(ctx.session.state).toBe('awaiting_date_name');
-    expect(replies[0]).toContain('has no date name');
-    expect(replies[0]).toContain('Column F');
+    const msg = normalizeTelegramText(replies[0]);
+    expect(msg).toContain('has no date name');
+    expect(msg).toContain('Column F');
   });
 
   test('date set but cost missing: asks for cost', async () => {
@@ -47,8 +49,9 @@ describe('proceedWithMetadataCollection', () => {
     await proceedWithMetadataCollection(ctx);
 
     expect(ctx.session.state).toBe('awaiting_cost');
-    expect(replies[0]).toContain('no cost specified');
-    expect(replies[0]).toContain('Column G');
+    const msg = normalizeTelegramText(replies[0]);
+    expect(msg).toContain('no cost specified');
+    expect(msg).toContain('Column G');
     expect(ctx.session.dateName).toBe('12 Apr');
   });
 
@@ -66,11 +69,11 @@ describe('proceedWithMetadataCollection', () => {
     expect(ctx.session.state).toBe('awaiting_usernames');
     expect(ctx.session.dateName).toBe('12 Apr');
     expect(ctx.session.cost).toBe(700);
-    const msg = replies[0];
-    expect(msg).toContain('✅ Column F metadata');
+    const msg = normalizeTelegramText(replies[0]);
+    expect(msg).toContain('Column F metadata');
     expect(msg).toContain('Date: 12 Apr');
     expect(msg).toContain('Cost: 700');
-    expect(msg).toContain('Now send me the list of usernames');
+    expect(msg).toContain('Now send the list of usernames');
   });
 
   test('includes sheet playerCount in summary when present', async () => {
@@ -90,7 +93,7 @@ describe('proceedWithMetadataCollection', () => {
 
     expect(ctx.session.state).toBe('awaiting_usernames');
     expect(ctx.session.playerCount).toBe(11);
-    expect(replies[0]).toContain('Players: 11');
+    expect(normalizeTelegramText(replies[0])).toContain('Players: 11');
   });
 
   test('playerCount 0 is shown when sheet reports 0', async () => {
@@ -109,7 +112,7 @@ describe('proceedWithMetadataCollection', () => {
     await proceedWithMetadataCollection(ctx);
 
     expect(ctx.session.playerCount).toBe(0);
-    expect(replies[0]).toContain('Players: 0');
+    expect(normalizeTelegramText(replies[0])).toContain('Players: 0');
   });
 
   test('when usernames already set (e.g. poll): skips username prompt and runs player-count check', async () => {
@@ -127,8 +130,9 @@ describe('proceedWithMetadataCollection', () => {
 
     await proceedWithMetadataCollection(ctx);
 
-    expect(replies.some((r) => r.includes('Checking sheet'))).toBe(true);
-    expect(replies.some((r) => r.includes('Is 1 the total'))).toBe(true);
+    const normalized = replies.map(normalizeTelegramText);
+    expect(normalized.some((r) => r.includes('Checking sheet'))).toBe(true);
+    expect(normalized.some((r) => r.includes('Is 1 the total'))).toBe(true);
     expect(ctx.session.state).toBe('awaiting_player_count_confirmation');
   });
 });

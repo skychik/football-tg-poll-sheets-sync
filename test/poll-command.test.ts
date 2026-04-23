@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createTelegramTestKit } from './support/create-test-bot';
 import { textMessageUpdate } from './support/telegram-updates';
+import { expectTexts } from './support/test-assertions';
 
 const testKit = createTelegramTestKit();
 
@@ -13,14 +14,14 @@ describe('/poll command', () => {
     const { bot, calls } = testKit.setupTestBot();
     await bot.handleUpdate(textMessageUpdate('/poll'));
 
+    expectTexts(
+      calls,
+      ['Please provide poll question', 'Usage: /poll'],
+      'sendMessage',
+    );
     const texts = calls
       .filter((c) => c.method === 'sendMessage')
-      .map((c) => (c.payload as { text?: string }).text ?? '');
-
-    expect(texts.some((t) => t.includes('Please provide poll question'))).toBe(
-      true,
-    );
-    expect(texts.some((t) => t.includes('Usage: /poll'))).toBe(true);
+      .map((c) => String((c.payload as { text?: string }).text ?? ''));
     expect(
       texts.some((t) => t.includes('at least a question and one option')),
     ).toBe(false);

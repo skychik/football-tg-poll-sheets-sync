@@ -2,6 +2,7 @@ import type { Bot } from 'grammy';
 import { pollIntentKeyboard } from '../../keyboards';
 import { getPollById } from '../../poll-domain';
 import type { MyContext } from '../../session';
+import { escapeMarkdownV2, replyMarkdownV2 } from '../markdown-v2';
 import {
   applyPollOptionSelectionAndStartUpdate,
   buildPollOptionsText,
@@ -22,8 +23,9 @@ export function registerForwardedPollMessageHandler(bot: Bot<MyContext>): void {
     const pollData = await getPollById(pollId, ctx.services.pollStorage);
 
     if (!pollData) {
-      await ctx.reply(
-        'ℹ️ This poll was not created by me. I can only track polls created with /poll command.',
+      await replyMarkdownV2(
+        ctx,
+        'ℹ️ This poll was *not created by me*\\. I only track polls created with */poll*\\.',
       );
       return;
     }
@@ -37,10 +39,12 @@ export function registerForwardedPollMessageHandler(bot: Bot<MyContext>): void {
     ctx.session.state = 'awaiting_poll_intent';
 
     const optionsText = buildPollOptionsText(pollData);
+    const qEsc = escapeMarkdownV2(pollData.question);
 
-    await ctx.reply(
-      `📊 Poll: "${pollData.question}"\n\n${optionsText}\n` +
-        `What would you like to do?`,
+    await replyMarkdownV2(
+      ctx,
+      `📊 *Poll:* _${qEsc}_\n\n${optionsText}\n` +
+        `*What would you like to do?*`,
       { reply_markup: pollIntentKeyboard() },
     );
   });
@@ -63,7 +67,7 @@ export async function handlePollIntent(
 
     const { pollData } = result;
     await enterPollOptionSelection(ctx, pollData, async (t, extra) => {
-      await ctx.reply(t, extra);
+      await ctx.reply(t, { ...extra, parse_mode: 'MarkdownV2' });
     });
     return true;
   }
@@ -73,12 +77,15 @@ export async function handlePollIntent(
     if (!result) return true;
 
     const { pollData } = result;
-    await resetSessionAfterPollView(ctx, pollData, (t) => ctx.reply(t));
+    await resetSessionAfterPollView(ctx, pollData, (t) =>
+      replyMarkdownV2(ctx, t),
+    );
     return true;
   }
 
-  await ctx.reply(
-    '❌ Please reply with "1" to update sheet or "2" to view voters.',
+  await replyMarkdownV2(
+    ctx,
+    '❌ Please reply with *1* to *update sheet* or *2* to *view voters*\\.',
   );
   return true;
 }
@@ -97,7 +104,7 @@ export async function handlePollOptionSelection(
   const optionNum = parseInt(rawText, 10);
 
   if (Number.isNaN(optionNum) || optionNum < 1) {
-    await ctx.reply('❌ Please provide a valid option number.');
+    await replyMarkdownV2(ctx, '❌ Please provide a *valid option number*\\.');
     return true;
   }
 
@@ -111,7 +118,7 @@ export async function handlePollOptionSelection(
     ctx,
     pollData,
     optionIndex,
-    (msg) => ctx.reply(msg),
+    (msg) => replyMarkdownV2(ctx, msg),
   );
   return true;
 }

@@ -3,8 +3,10 @@ import {
   ERR_INVALID_YES_NO,
   ERR_SESSION_DATA_LOST,
   ERR_TARGET_COLUMN_NOT_SET,
+  MSG_ASK_PLAYER_COUNT,
 } from '../constants';
 import type { MyContext } from '../session';
+import { replyMarkdownV2 } from '../telegram/markdown-v2';
 import { proceedWithPlayerCountCheck } from '../workflow/player-count-flow';
 import {
   finalizeOverrideWrite,
@@ -49,7 +51,10 @@ export async function handleUsernames(
   const usernames = parseUsernames(rawText);
 
   if (usernames.length === 0) {
-    await ctx.reply('❌ Failed to recognize usernames. Try again or use /help');
+    await replyMarkdownV2(
+      ctx,
+      '❌ Failed to recognize usernames\\. Try again or use */help*\\.',
+    );
     return true;
   }
 
@@ -77,7 +82,7 @@ export async function handlePlayerCountConfirmation(
   const answer = parseYesNo(text);
 
   if (answer === null) {
-    await ctx.reply(ERR_INVALID_YES_NO);
+    await replyMarkdownV2(ctx, ERR_INVALID_YES_NO);
     return true;
   }
 
@@ -94,7 +99,7 @@ export async function handlePlayerCountConfirmation(
     await persistPlayerCountToSheetAndCheckOverrides(ctx, nicknameRows);
   } else {
     ctx.session.state = 'awaiting_player_count';
-    await ctx.reply('How many players attended the match?');
+    await replyMarkdownV2(ctx, MSG_ASK_PLAYER_COUNT);
   }
 
   return true;
@@ -113,8 +118,9 @@ export async function handlePlayerCount(
 
   const count = parseInt(text, 10);
   if (Number.isNaN(count) || count < 0) {
-    await ctx.reply(
-      '❌ Please provide a valid positive integer for the player count',
+    await replyMarkdownV2(
+      ctx,
+      '❌ Please provide a *valid positive integer* for the player count\\.',
     );
     return true;
   }
@@ -150,16 +156,13 @@ export async function handleOverrideConfirmation(
   const answer = parseYesNo(text);
 
   if (answer === null) {
-    await ctx.reply(ERR_INVALID_YES_NO);
+    await replyMarkdownV2(ctx, ERR_INVALID_YES_NO);
     return true;
   }
 
   const columnToUse = ctx.session.column || ctx.session.targetColumn;
   if (!columnToUse || !ctx.session.nicknameRowsEntries) {
-    await replyErrorAndReset(
-      ctx,
-      '❌ Error: session data lost. Start over with /update',
-    );
+    await replyErrorAndReset(ctx, ERR_SESSION_DATA_LOST);
     return true;
   }
 

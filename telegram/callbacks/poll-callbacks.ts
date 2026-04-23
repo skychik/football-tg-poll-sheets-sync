@@ -1,6 +1,7 @@
 import type { Bot } from 'grammy';
 import { CallbackPrefix } from '../../keyboards';
 import type { MyContext } from '../../session';
+import { editMessageMarkdownV2 } from '../markdown-v2';
 import {
   applyPollOptionSelectionAndStartUpdate,
   enterPollOptionSelection,
@@ -26,7 +27,7 @@ export function registerPollCallbackHandlers(bot: Bot<MyContext>): void {
 
         const { pollData } = result;
         await enterPollOptionSelection(ctx, pollData, async (text, extra) => {
-          await ctx.editMessageText(text, extra);
+          await editMessageMarkdownV2(ctx, text, extra);
         });
         return;
       }
@@ -37,7 +38,7 @@ export function registerPollCallbackHandlers(bot: Bot<MyContext>): void {
 
         const { pollData } = result;
         await resetSessionAfterPollView(ctx, pollData, (t) =>
-          ctx.editMessageText(t),
+          editMessageMarkdownV2(ctx, t),
         );
         return;
       }
@@ -54,7 +55,7 @@ export function registerPollCallbackHandlers(bot: Bot<MyContext>): void {
       await ctx.answerCallbackQuery();
 
       if (Number.isNaN(optionIndex)) {
-        await ctx.editMessageText('❌ Invalid option.');
+        await editMessageMarkdownV2(ctx, '❌ *Invalid option\\.*');
         return;
       }
 
@@ -67,7 +68,7 @@ export function registerPollCallbackHandlers(bot: Bot<MyContext>): void {
         ctx,
         pollData,
         optionIndex,
-        (msg) => ctx.editMessageText(msg),
+        (msg) => editMessageMarkdownV2(ctx, msg),
       );
     },
   );
