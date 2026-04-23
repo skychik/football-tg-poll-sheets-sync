@@ -4,6 +4,22 @@ import type { MyContext } from '../session';
 import { resetSession } from '../session';
 import { showMoneyColumnChoice } from './money-flow';
 
+let registerWriteMutex: Promise<void> = Promise.resolve();
+
+async function withRegisterWriteMutex<T>(fn: () => Promise<T>): Promise<T> {
+  const previous = registerWriteMutex;
+  let release!: () => void;
+  registerWriteMutex = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
 /**
  * /register with optional `textAfterCommand` (name after the command)
  */
@@ -59,7 +75,19 @@ export async function doRegisterUser(
 
   try {
     const sheets = await ctx.services.createSheetsClient();
-    if (await sheets.isTelegramUsernameInSheet(atTg)) {
+    const registration = await withRegisterWriteMutex(async () => {
+      if (await sheets.isTelegramUsernameInSheet(atTg)) {
+        return { status: 'exists' as const };
+      }
+      const row = await sheets.findFirstRowWithEmptyNameAndTg();
+      if (row === null) {
+        return { status: 'no_free_row' as const };
+      }
+      await sheets.writeRegisterRow(row, name, atTg);
+      return { status: 'created' as const, row };
+    });
+
+    if (registration.status === 'exists') {
       await ctx.reply(`You are already in the table: ${atTg}`);
       if (mode === 'from_money') {
         await showMoneyColumnChoice(ctx);
@@ -68,15 +96,15 @@ export async function doRegisterUser(
       }
       return;
     }
-    const row = await sheets.findFirstRowWithEmptyNameAndTg();
-    if (row === null) {
+    if (registration.status === 'no_free_row') {
       await ctx.reply(
         '❌ No free row: could not find a row with empty A and B (from row 7).',
       );
       resetSession(ctx.session);
       return;
     }
-    await sheets.writeRegisterRow(row, name, atTg);
+
+    const row = registration.row;
     if (mode === 'from_money') {
       ctx.session.moneyResumeAfterRegister = false;
       await ctx.reply(

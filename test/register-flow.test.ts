@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
+import type { User } from '@grammyjs/types';
 import { baseSheets } from './sheet-test-stub';
 import { createTelegramTestKit } from './support/create-test-bot';
 import {
@@ -48,6 +49,47 @@ describe('/register', () => {
     await bot.handleUpdate(textMessageUpdate('/register Alice'));
     expect(writes).toEqual([{ name: 'Alice', at: '@testuser', row: 9 }]);
     expectTexts(calls, ['Done:', 'Alice', '9'], 'sendMessage');
+  });
+
+  test('concurrent registrations serialize row allocation', async () => {
+    const writes: Array<{ name: string; at: string; row: number }> = [];
+    let nextRow = 9;
+    const registered = new Set<string>();
+    testKit.setSheetsClient(
+      baseSheets({
+        isTelegramUsernameInSheet: async (at) => registered.has(at),
+        findFirstRowWithEmptyNameAndTg: async () => nextRow,
+        writeRegisterRow: async (row, name, at) => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          writes.push({ name, at, row });
+          registered.add(at);
+          nextRow += 1;
+        },
+      }),
+    );
+    const { bot } = setupTestBot();
+    const aliceUser: User = {
+      id: 99_010,
+      is_bot: false,
+      first_name: 'Alice',
+      username: 'alice_test',
+    };
+    const bobUser: User = {
+      id: 99_011,
+      is_bot: false,
+      first_name: 'Bob',
+      username: 'bob_test',
+    };
+
+    await Promise.all([
+      bot.handleUpdate(textMessageUpdateWithFrom('/register Alice', aliceUser)),
+      bot.handleUpdate(textMessageUpdateWithFrom('/register Bob', bobUser)),
+    ]);
+
+    expect(writes).toEqual([
+      { name: 'Alice', at: '@alice_test', row: 9 },
+      { name: 'Bob', at: '@bob_test', row: 10 },
+    ]);
   });
 
   test('without name: prompt then second message completes registration', async () => {
