@@ -30,14 +30,28 @@ class MockJWT {
 
 const originalSheets = google.sheets;
 const originalJwt = google.auth.JWT;
+let previousSpreadsheetId: string | undefined;
+let previousServiceAccountEmail: string | undefined;
+let previousPrivateKey: string | undefined;
 
 function resetValuesGetMock(): void {
   (valuesGetMock as { mockClear?: () => void }).mockClear?.();
 }
 
+function restoreEnvVar(name: string, previousValue: string | undefined): void {
+  if (previousValue === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = previousValue;
+  }
+}
+
 describe('createGoogleSheetsClient / findFirstRowWithEmptyNameAndTg', () => {
   beforeEach(() => {
     currentValues = [];
+    previousSpreadsheetId = process.env.SPREADSHEET_ID;
+    previousServiceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    previousPrivateKey = process.env.GOOGLE_PRIVATE_KEY;
     process.env.SPREADSHEET_ID = 'test-sheet-id';
     process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL = 'bot@example.com';
     process.env.GOOGLE_PRIVATE_KEY =
@@ -50,9 +64,9 @@ describe('createGoogleSheetsClient / findFirstRowWithEmptyNameAndTg', () => {
   afterEach(() => {
     google.sheets = originalSheets;
     google.auth.JWT = originalJwt;
-    delete process.env.SPREADSHEET_ID;
-    delete process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    delete process.env.GOOGLE_PRIVATE_KEY;
+    restoreEnvVar('SPREADSHEET_ID', previousSpreadsheetId);
+    restoreEnvVar('GOOGLE_SERVICE_ACCOUNT_EMAIL', previousServiceAccountEmail);
+    restoreEnvVar('GOOGLE_PRIVATE_KEY', previousPrivateKey);
   });
 
   test('no rows in response -> first data row (append here when sheet is empty in range)', async () => {
