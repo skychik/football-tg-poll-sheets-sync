@@ -24,9 +24,7 @@ export async function handleRegisterCommand(
   try {
     const sheets = await ctx.services.createSheetsClient();
     if (await sheets.isTelegramUsernameInSheet(atTg)) {
-      await ctx.reply(`You are already in the table: **${atTg}**`, {
-        parse_mode: 'Markdown',
-      });
+      await ctx.reply(`You are already in the table: ${atTg}`);
       return;
     }
     const name = textAfterCommand.trim();
@@ -62,9 +60,7 @@ export async function doRegisterUser(
   try {
     const sheets = await ctx.services.createSheetsClient();
     if (await sheets.isTelegramUsernameInSheet(atTg)) {
-      await ctx.reply(`You are already in the table: **${atTg}**`, {
-        parse_mode: 'Markdown',
-      });
+      await ctx.reply(`You are already in the table: ${atTg}`);
       if (mode === 'from_money') {
         await showMoneyColumnChoice(ctx);
       } else {
@@ -84,14 +80,11 @@ export async function doRegisterUser(
     if (mode === 'from_money') {
       ctx.session.moneyResumeAfterRegister = false;
       await ctx.reply(
-        `Added **${name}** / **${atTg}** at row **${row}**.\n\nContinuing with your payment…`,
-        { parse_mode: 'Markdown' },
+        `Added ${name} / ${atTg} at row ${row}.\n\nContinuing with your payment…`,
       );
       await showMoneyColumnChoice(ctx);
     } else {
-      await ctx.reply(`Done: **${name}** / **${atTg}** at row **${row}**.`, {
-        parse_mode: 'Markdown',
-      });
+      await ctx.reply(`Done: ${name} / ${atTg} at row ${row}.`);
       resetSession(ctx.session);
     }
   } catch (e) {
