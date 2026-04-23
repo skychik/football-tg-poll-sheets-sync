@@ -483,7 +483,9 @@ export async function createGoogleSheetsClient(): Promise<SheetsClient> {
         return SHEET_DATA_FIRST_ROW + i;
       }
     }
-    return null;
+    // Google Sheets omits trailing fully empty rows from values.get, so if the
+    // fetched block is full the next free row is immediately after it.
+    return SHEET_DATA_FIRST_ROW + rows.length;
   }
 
   async function writeRegisterRow(

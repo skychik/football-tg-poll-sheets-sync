@@ -10,7 +10,7 @@ It supports both manual updates and poll-driven updates. With **`REDIS_URL`** se
 - Persist poll state in Redis when **`REDIS_URL`** is set (`poll:{pollId}`), or in-memory when it is not (development fallback) / when **`POLL_STORAGE=memory`** is set
 - Forward poll messages back to the bot to extract voters
 - Continue to column/date/cost/player-count workflow for Google Sheets updates
-- Record payments with `/money` (or a plain `1`–`20000` in private chat); `/register` adds your name and `@username` in columns A and B
+- Record payments with `/money` (or a plain number like `1` or `1.5`, up to `20000`, in private chat); `/register` adds your name and `@username` in columns A and B
 - Protect existing values with confirmation before overwrite
 
 ## Usage
