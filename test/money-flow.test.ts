@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Message, User } from '@grammyjs/types';
-import { MONEY_MAX_AMOUNT, SHEET_MONEY_REMAINING_ROW } from '../constants';
+import {
+  ERR_MONEY_CELL_CHANGED_SINCE_READ,
+  MONEY_MAX_AMOUNT,
+  SHEET_MONEY_REMAINING_ROW,
+} from '../constants';
 import { parseAmountFromString } from '../flows/money-flow';
 import { baseSheets } from './sheet-test-stub';
 import { createTelegramTestKit } from './support/create-test-bot';
@@ -67,6 +71,44 @@ describe('/money', () => {
     );
     expect(writes).toEqual([{ c: 'F', r: 7, a: 500 }]);
     expectTexts(calls, ['wrote', '500', 'F'], 'sendMessage');
+  });
+
+  test('final write: aborts if cell changed after pre-read (no clobber)', async () => {
+    const writes: Array<{ c: string; r: number; a: number }> = [];
+    let readCount = 0;
+    testKit.setSheetsClient(
+      baseSheets({
+        findUserRowByTg: async () => 7,
+        findLastDateColumn: async () => ({ column: 'F', date: '12 Apr' }),
+        getNextDateColumnInfo: async () => ({
+          nextColumn: 'G',
+          headerEmpty: true,
+          userCellEmpty: true,
+        }),
+        getMoneyUserCellInfo: async () => {
+          readCount += 1;
+          if (readCount === 1) {
+            return { cell: 'zero' };
+          }
+          return { cell: 'number', numericValue: 9, displayText: '9' };
+        },
+        isCellEmpty: async (p) => {
+          if (p.row === SHEET_MONEY_REMAINING_ROW) return false;
+          return true;
+        },
+        writeMoneyToCell: async (c, r, a) => {
+          writes.push({ c, r, a });
+        },
+      }),
+    );
+    const { bot, calls, getLastBotMessage } = setupTestBot();
+    await bot.handleUpdate(textMessageUpdate('/money 500'));
+    const colMsg = getLastBotMessage();
+    await bot.handleUpdate(
+      callbackQueryUpdate('mn:col:last', colMsg as Message),
+    );
+    expect(writes).toEqual([]);
+    expectTexts(calls, [ERR_MONEY_CELL_CHANGED_SINCE_READ], 'sendMessage');
   });
 
   test('/money 500: empty cell -> add anyway -> write', async () => {

@@ -1,11 +1,13 @@
 import { handleApiError, replyErrorAndReset } from '../bot-helpers';
 import {
+  ERR_MONEY_CELL_CHANGED_SINCE_READ,
   ERR_MONEY_VALUE,
   ERR_NO_TG_USERNAME,
   ERR_SESSION_DATA_LOST,
   MONEY_MAX_AMOUNT,
   SHEET_MONEY_REMAINING_ROW,
 } from '../constants';
+import type { MoneyUserCellState } from '../sheets/sheets-types';
 import {
   moneyColumnKeyboard,
   moneyEmptyCellKeyboard,
@@ -34,6 +36,26 @@ export function resetForNewMoneySession(ctx: MyContext): void {
 
 function validateMoneyAmount(n: number): boolean {
   return Number.isFinite(n) && n > 0 && n <= MONEY_MAX_AMOUNT;
+}
+
+/**
+ * Stable fingerprint of the money cell (empty vs zero vs number + values) for
+ * pre-write vs re-read checks. Replaces a legacy display string that could not
+ * distinguish e.g. empty from zero.
+ */
+function moneyCellReadSnapshot(info: {
+  cell: MoneyUserCellState;
+  numericValue?: number;
+  displayText?: string;
+}): string {
+  return JSON.stringify({
+    c: info.cell,
+    t: info.displayText ?? null,
+    n:
+      info.numericValue !== undefined && !Number.isNaN(info.numericValue)
+        ? info.numericValue
+        : null,
+  });
 }
 
 /** Must match the shape accepted for bare-number messages and `/money` amount text. */
@@ -243,9 +265,7 @@ async function runPreWriteFromColumn(
       row: SHEET_MONEY_REMAINING_ROW,
     });
 
-    s.moneyOldCellValue =
-      info.displayText ??
-      (info.numericValue != null ? String(info.numericValue) : '');
+    s.moneyOldCellValue = moneyCellReadSnapshot(info);
 
     if (info.cell === 'number') {
       s.state = 'awaiting_money_replace_confirm';
@@ -484,8 +504,20 @@ export async function doMoneyWrite(ctx: MyContext): Promise<void> {
     await replyErrorAndReset(ctx, 'Session lost. Use /money again.');
     return;
   }
+  if (s.moneyOldCellValue === undefined) {
+    await replyErrorAndReset(ctx, 'Session lost. Use /money again.');
+    return;
+  }
+  const expected = s.moneyOldCellValue;
   try {
     const sheets = await ctx.services.createSheetsClient();
+    // Re-check against last read: Sheet API has no per-cell compare-and-swap; we
+    // avoid clobbering if another process changed the cell after confirmation.
+    const now = await sheets.getMoneyUserCellInfo({ column: col, userRow: row });
+    if (moneyCellReadSnapshot(now) !== expected) {
+      await replyErrorAndReset(ctx, ERR_MONEY_CELL_CHANGED_SINCE_READ);
+      return;
+    }
     await sheets.writeMoneyToCell(col, row, amount);
     await ctx.reply(
       `Done: wrote **${amount}** to column **${col}** row **${row}** (replaced the cell).`,

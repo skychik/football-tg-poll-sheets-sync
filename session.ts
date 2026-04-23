@@ -46,7 +46,7 @@ export interface SessionData {
   moneyNextColumn?: string;
   /** @username key used in findNicknameRows (e.g. @alice) */
   moneyTgKey?: string;
-  /** Stashed cell preview for messages */
+  /** JSON snapshot of getMoneyUserCellInfo at pre-write read (for final write check) */
   moneyOldCellValue?: string;
   /** @username to write in B on register, e.g. @alice */
   registerAtUsername?: string;

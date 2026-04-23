@@ -32,3 +32,5 @@ export const ERR_NO_TG_USERNAME =
   '❌ You need a Telegram username in your Telegram account to use this.';
 export const ERR_MONEY_AND_REGISTER_PRIVATE_ONLY =
   '❌ /money and /register work only in a private chat with the bot. Open a DM to continue.';
+export const ERR_MONEY_CELL_CHANGED_SINCE_READ =
+  '❌ The cell in the sheet was changed after you started this step. I did not write, to avoid overwriting that update. Use /money to try again.';
