@@ -1,5 +1,4 @@
 import type { Bot } from 'grammy';
-import { MSG_CANCELLED } from '../../constants';
 import {
   onMoneyCallbackColumnLast,
   onMoneyCallbackColumnNext,
@@ -49,8 +48,6 @@ export function registerMoneyCallbackHandlers(bot: Bot<MyContext>): void {
           '*Confirmed:* replace with new amount',
           {},
         );
-      } else {
-        await tryEditMessageText(ctx, MSG_CANCELLED, {});
       }
       await onMoneyReplaceCallback(ctx, data === 'rp:yes');
       return;
@@ -58,8 +55,6 @@ export function registerMoneyCallbackHandlers(bot: Bot<MyContext>): void {
     if (data === 'em:yes' || data === 'em:no') {
       if (data === 'em:yes') {
         await tryEditMessageText(ctx, 'Will add in this cell', {});
-      } else {
-        await tryEditMessageText(ctx, MSG_CANCELLED, {});
       }
       await onMoneyEmptyPollCallback(ctx, data === 'em:yes');
       return;
@@ -67,8 +62,6 @@ export function registerMoneyCallbackHandlers(bot: Bot<MyContext>): void {
     if (data === 'r4:yes' || data === 'r4:no') {
       if (data === 'r4:yes') {
         await tryEditMessageText(ctx, 'Will write to sheet', {});
-      } else {
-        await tryEditMessageText(ctx, MSG_CANCELLED, {});
       }
       await onMoneyRow4Callback(ctx, data === 'r4:yes');
       return;
