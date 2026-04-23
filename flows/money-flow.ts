@@ -36,11 +36,16 @@ function validateMoneyAmount(n: number): boolean {
   return Number.isFinite(n) && n > 0 && n <= MONEY_MAX_AMOUNT;
 }
 
+/** Must match the shape accepted for bare-number messages and `/money` amount text. */
+const MONEY_AMOUNT_TEXT_PATTERN = /^\d+(\.\d+)?$/;
+
 export function parseAmountFromString(raw: string): number | null {
   const t = raw.trim();
-  if (t === '') return null;
+  if (t === '' || !MONEY_AMOUNT_TEXT_PATTERN.test(t)) {
+    return null;
+  }
   const n = parseFloat(t);
-  if (Number.isNaN(n) || n <= 0 || n > MONEY_MAX_AMOUNT) {
+  if (!validateMoneyAmount(n)) {
     return null;
   }
   return n;
@@ -125,15 +130,11 @@ export async function tryHandleBareMoneyNumber(
   if (ctx.session.state !== 'idle' || ctx.chat?.type !== 'private') {
     return false;
   }
-  const t = raw.trim();
-  if (!/^\d+(\.\d+)?$/.test(t)) {
+  const n = parseAmountFromString(raw);
+  if (n === null) {
     return false;
   }
   if (!ctx.from?.username) {
-    return false;
-  }
-  const n = parseFloat(t);
-  if (!validateMoneyAmount(n)) {
     return false;
   }
   await startMoneyWithParsedAmount(ctx, n, true);

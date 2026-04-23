@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Message, User } from '@grammyjs/types';
-import { SHEET_MONEY_REMAINING_ROW } from '../constants';
+import { MONEY_MAX_AMOUNT, SHEET_MONEY_REMAINING_ROW } from '../constants';
+import { parseAmountFromString } from '../flows/money-flow';
 import { baseSheets } from './sheet-test-stub';
 import { createTelegramTestKit } from './support/create-test-bot';
 import {
@@ -528,5 +529,25 @@ describe('/money', () => {
       c.payload.text?.toLowerCase().includes('write'),
     );
     expect(moneyHints.length).toBe(0);
+  });
+});
+
+describe('parseAmountFromString', () => {
+  test('rejects trailing junk (no longer accepted as parseFloat prefix)', () => {
+    expect(parseAmountFromString('100usd')).toBeNull();
+  });
+
+  test('rejects malformed decimals', () => {
+    expect(parseAmountFromString('12.3.4')).toBeNull();
+  });
+
+  test('rejects scientific notation', () => {
+    expect(parseAmountFromString('1e2')).toBeNull();
+  });
+
+  test('accepts integer and decimal strings in range', () => {
+    expect(parseAmountFromString('500')).toBe(500);
+    expect(parseAmountFromString(String(MONEY_MAX_AMOUNT))).toBe(MONEY_MAX_AMOUNT);
+    expect(parseAmountFromString('1.5')).toBe(1.5);
   });
 });
