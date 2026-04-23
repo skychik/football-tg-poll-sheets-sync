@@ -82,10 +82,7 @@ describe('callback query handlers', () => {
     );
 
     expectTexts(calls, ['Selected column H'], 'editMessageText');
-    expectTexts(calls, [
-      'Column H metadata',
-      'Now send me the list of usernames',
-    ]);
+    expectTexts(calls, ['Column H metadata', 'Now send the list of usernames']);
   });
 
   test('yn:playercount:no asks for manual player count', async () => {

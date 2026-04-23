@@ -8,7 +8,7 @@ import {
   pollMessageUpdate,
   textMessageUpdate,
 } from './support/telegram-updates';
-import { expectTexts } from './support/test-assertions';
+import { expectTexts, normalizeTelegramText } from './support/test-assertions';
 
 const testKit = createTelegramTestKit();
 const { pollStorage: testPollStorage, setupTestBot } = testKit;
@@ -38,12 +38,9 @@ describe('Telegram scenario tests', () => {
       callbackQueryUpdate('col:use:F', confirmMsg as Message),
     );
 
-    expectTexts(calls, [
-      '✅ Using column F',
-      'Now send me the list of usernames',
-    ]);
-    const all = sentTexts(calls);
-    expect(all.some((t) => t.includes('✅ Column F metadata'))).toBe(true);
+    expectTexts(calls, ['Using column F', 'Now send the list of usernames']);
+    const all = sentTexts(calls).map(normalizeTelegramText);
+    expect(all.some((t) => t.includes('Column F metadata'))).toBe(true);
   });
 
   test('Scenario 2: no date columns -> create first column flow', async () => {

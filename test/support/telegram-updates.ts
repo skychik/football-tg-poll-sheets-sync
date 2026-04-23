@@ -1,6 +1,7 @@
 import type { CallbackQuery, Message, Update, User } from '@grammyjs/types';
 
 export const TEST_CHAT_ID = 42_001;
+export const TEST_GROUP_CHAT_ID = -100_200_100;
 export const TEST_USER_ID = 99_001;
 
 export const testUser: User = {
@@ -15,6 +16,12 @@ const testPrivateChat = {
   type: 'private' as const,
   first_name: 'Test',
   username: 'testuser',
+};
+
+const testGroupChat = {
+  id: TEST_GROUP_CHAT_ID,
+  type: 'group' as const,
+  title: 'Test group',
 };
 
 let updateIdCounter = 60_000;
@@ -40,11 +47,39 @@ function botCommandEntity(text: string): Message['entities'] {
 }
 
 export function textMessageUpdate(text: string): Update {
+  return textMessageUpdateWithFrom(text, testUser);
+}
+
+/**
+ * Same as `textMessageUpdate` but with a custom `from` (e.g. no `username` for /register).
+ */
+export function textMessageUpdateWithFrom(text: string, from: User): Update {
   const message: Message = {
     message_id: nextUpdateId(),
     date: Math.floor(Date.now() / 1000),
     chat: testPrivateChat,
-    from: testUser,
+    from,
+    text,
+    entities: botCommandEntity(text),
+  };
+  return {
+    update_id: nextUpdateId(),
+    message,
+  };
+}
+
+/**
+ * A text message in a group (non-private chat), e.g. for /money and /register guards.
+ */
+export function textMessageUpdateInGroup(
+  text: string,
+  from: User = testUser,
+): Update {
+  const message: Message = {
+    message_id: nextUpdateId(),
+    date: Math.floor(Date.now() / 1000),
+    chat: testGroupChat,
+    from,
     text,
     entities: botCommandEntity(text),
   };

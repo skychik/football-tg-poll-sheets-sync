@@ -1,6 +1,6 @@
 import type { Bot } from 'grammy';
 import { replyErrorAndReset } from '../../bot-helpers';
-import { ERR_SESSION_DATA_LOST } from '../../constants';
+import { ERR_SESSION_DATA_LOST, MSG_ASK_PLAYER_COUNT } from '../../constants';
 import {
   finalizeOverrideWrite,
   persistPlayerCountToSheetAndCheckOverrides,
@@ -9,6 +9,7 @@ import { CallbackPrefix } from '../../keyboards';
 import type { MyContext, SessionData } from '../../session';
 import { resetSession } from '../../session';
 import { proceedWithMetadataCollection } from '../../workflow/metadata-flow';
+import { editMessageMarkdownV2 } from '../markdown-v2';
 
 function clearColumnScopedSessionFields(session: SessionData): void {
   session.dateName = undefined;
@@ -34,7 +35,7 @@ export function registerUpdateCallbackHandlers(bot: Bot<MyContext>): void {
     }
     if (data === 'playercount:no') {
       ctx.session.state = 'awaiting_player_count';
-      await ctx.editMessageText('How many players attended the match?');
+      await editMessageMarkdownV2(ctx, MSG_ASK_PLAYER_COUNT);
       return;
     }
 
@@ -57,7 +58,7 @@ export function registerUpdateCallbackHandlers(bot: Bot<MyContext>): void {
       clearColumnScopedSessionFields(ctx.session);
       ctx.session.targetColumn = column;
       ctx.session.isNewColumn = false;
-      await ctx.editMessageText(`✅ Using column ${column}`);
+      await editMessageMarkdownV2(ctx, `Using column *${column}*`);
       await proceedWithMetadataCollection(ctx);
       return;
     }
@@ -68,8 +69,9 @@ export function registerUpdateCallbackHandlers(bot: Bot<MyContext>): void {
       ctx.session.targetColumn = column;
       ctx.session.isNewColumn = true;
       ctx.session.state = 'awaiting_date_name';
-      await ctx.editMessageText(
-        `📅 Please provide the date name for column ${column} (row 1):`,
+      await editMessageMarkdownV2(
+        ctx,
+        `📅 Please provide the *date name* for column *${column}* \\(row *1*\\):`,
       );
       return;
     }
@@ -80,16 +82,18 @@ export function registerUpdateCallbackHandlers(bot: Bot<MyContext>): void {
       ctx.session.targetColumn = column;
       ctx.session.isNewColumn = true;
       ctx.session.state = 'awaiting_date_name';
-      await ctx.editMessageText(
-        `📅 Please provide the date name for column ${column} (row 1):`,
+      await editMessageMarkdownV2(
+        ctx,
+        `📅 Please provide the *date name* for column *${column}* \\(row *1*\\):`,
       );
       return;
     }
 
     if (data === 'cancel') {
       resetSession(ctx.session);
-      await ctx.editMessageText(
-        '✅ Operation cancelled. Use /update to start again.',
+      await editMessageMarkdownV2(
+        ctx,
+        '🚫 *Operation cancelled\\.* Use /update to start again\\.',
       );
       return;
     }
@@ -99,7 +103,7 @@ export function registerUpdateCallbackHandlers(bot: Bot<MyContext>): void {
       clearColumnScopedSessionFields(ctx.session);
       ctx.session.targetColumn = column;
       ctx.session.isNewColumn = false;
-      await ctx.editMessageText(`✅ Selected column ${column}`);
+      await editMessageMarkdownV2(ctx, `Selected column *${column}*`);
       await proceedWithMetadataCollection(ctx);
       return;
     }
@@ -116,7 +120,7 @@ async function handlePlayerCountYes(ctx: MyContext): Promise<void> {
   const recognizedCount = nicknameRows.size;
   ctx.session.playerCount = recognizedCount;
 
-  await ctx.editMessageText(`✅ Player count: ${recognizedCount}`);
+  await editMessageMarkdownV2(ctx, `Player count: *${recognizedCount}*`);
 
   await persistPlayerCountToSheetAndCheckOverrides(ctx, nicknameRows);
 }
@@ -127,19 +131,17 @@ async function handleOverrideChoice(
 ): Promise<void> {
   const columnToUse = ctx.session.column || ctx.session.targetColumn;
   if (!columnToUse || !ctx.session.nicknameRowsEntries) {
-    await replyErrorAndReset(
-      ctx,
-      '❌ Error: session data lost. Start over with /update',
-    );
+    await replyErrorAndReset(ctx, ERR_SESSION_DATA_LOST);
     return;
   }
 
   const nicknameRows = new Map<string, number>(ctx.session.nicknameRowsEntries);
 
-  await ctx.editMessageText(
+  await editMessageMarkdownV2(
+    ctx,
     overwrite
-      ? '✅ Will overwrite existing values'
-      : '⏭️ Will skip existing values',
+      ? '✅ *Will overwrite* existing values'
+      : '⏭️ *Will skip* existing values',
   );
 
   await finalizeOverrideWrite(ctx, nicknameRows, overwrite);

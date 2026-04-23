@@ -1,6 +1,7 @@
 import { Bot, type BotConfig, session } from 'grammy';
 import type { AppServices } from '../app-services';
 import type { MyContext, SessionData } from '../session';
+import { registerMoneyCallbackHandlers } from './callbacks/money-callbacks';
 import { registerPollCallbackHandlers } from './callbacks/poll-callbacks';
 import { registerUpdateCallbackHandlers } from './callbacks/update-callbacks';
 import { registerCommands } from './commands';
@@ -44,6 +45,16 @@ export function createBot(
         pollId: undefined,
         pollQuestion: undefined,
         columnMatches: undefined,
+        moneyAmount: undefined,
+        moneyResumeAfterRegister: undefined,
+        moneyWriteColumn: undefined,
+        moneyUserSheetRow: undefined,
+        moneyLastDateColumn: undefined,
+        moneyLastDateText: undefined,
+        moneyNextColumn: undefined,
+        moneyTgKey: undefined,
+        moneyOldCellValue: undefined,
+        registerAtUsername: undefined,
       }),
     }),
   );
@@ -61,6 +72,7 @@ export function createBot(
   registerCommands(bot, services.pollStorage);
   registerPollAnswerHandler(bot, services.pollStorage);
   registerPollCallbackHandlers(bot);
+  registerMoneyCallbackHandlers(bot);
   registerUpdateCallbackHandlers(bot);
   registerMessageRouter(bot);
 

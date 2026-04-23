@@ -7,12 +7,19 @@ import {
   handleNewColumnChoice,
 } from '../flows/column-handlers';
 import {
+  handleAwaitingMoneyAmount,
+  tryHandleBareMoneyNumber,
+  tryHandleMoneyBlockedPlainText,
+} from '../flows/money-flow';
+import { handleAwaitingRegisterName } from '../flows/register-user';
+import {
   handleOverrideConfirmation,
   handlePlayerCount,
   handlePlayerCountConfirmation,
   handleUsernames,
 } from '../flows/sheet-handlers';
 import type { MyContext } from '../session';
+import { replyMarkdownV2 } from './markdown-v2';
 import {
   handlePollIntent,
   handlePollOptionSelection,
@@ -34,6 +41,11 @@ export function registerMessageRouter(bot: Bot<MyContext>): void {
 
     if (ctx.chat.type !== 'private') return;
 
+    if (await tryHandleMoneyBlockedPlainText(ctx)) return;
+    if (await handleAwaitingRegisterName(ctx, rawText)) return;
+    if (await handleAwaitingMoneyAmount(ctx, rawText)) return;
+    if (await tryHandleBareMoneyNumber(ctx, rawText)) return;
+
     if (await handleColumnConfirmation(ctx, text)) return;
     if (await handleColumnSelection(ctx, rawText)) return;
     if (await handleNewColumnChoice(ctx, text)) return;
@@ -45,6 +57,6 @@ export function registerMessageRouter(bot: Bot<MyContext>): void {
     if (await handlePlayerCount(ctx, text)) return;
     if (await handleOverrideConfirmation(ctx, text)) return;
 
-    await ctx.reply('👋 Use /start to begin updating a column.');
+    await replyMarkdownV2(ctx, '👋 Use */help* to see what I can do\\.');
   });
 }

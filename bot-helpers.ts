@@ -1,5 +1,6 @@
 import { ERR_SESSION_DATA_LOST } from './constants';
 import { type MyContext, resetSession, type SessionData } from './session';
+import { escapeMarkdownV2, replyMarkdownV2 } from './telegram/markdown-v2';
 
 /**
  * Parse yes/no response from user text
@@ -37,7 +38,7 @@ export async function replyErrorAndReset(
   ctx: MyContext,
   message: string,
 ): Promise<void> {
-  await ctx.reply(message);
+  await replyMarkdownV2(ctx, message);
   resetSession(ctx.session);
 }
 
@@ -75,23 +76,30 @@ export function buildUpdateResultMessage(
   skippedNicknames: string[],
   notFoundNicknames: string[],
 ): string {
-  let response = `✅ Updated ${updatedCount} record(s) in column ${column}`;
+  const col = escapeMarkdownV2(column);
+  let response = `✅ *Updated* *${updatedCount}* record\\(s\\) in column *${col}*`;
 
   if (updatedNicknames.length > 0) {
     response += `:\n\n`;
-    response += updatedNicknames.map((n) => `• ${n}`).join('\n');
+    response += updatedNicknames
+      .map((n) => `• ${escapeMarkdownV2(n)}`)
+      .join('\n');
   } else {
-    response += `.\n`;
+    response += `\\.\n`;
   }
 
   if (skippedNicknames.length > 0) {
-    response += `\n\n⏭️ Skipped ${skippedNicknames.length} cell(s) with existing values:\n`;
-    response += skippedNicknames.map((n) => `• ${n}`).join('\n');
+    response += `\n\n⏭️ *Skipped* *${skippedNicknames.length}* cell\\(s\\) with existing values:\n`;
+    response += skippedNicknames
+      .map((n) => `• ${escapeMarkdownV2(n)}`)
+      .join('\n');
   }
 
   if (notFoundNicknames.length > 0) {
-    response += `\n\n⚠️ Not found in sheet:\n`;
-    response += notFoundNicknames.map((n) => `• ${n}`).join('\n');
+    response += `\n\n⚠️ *Not found in sheet:*\n`;
+    response += notFoundNicknames
+      .map((n) => `• ${escapeMarkdownV2(n)}`)
+      .join('\n');
   }
 
   return response;
@@ -107,9 +115,13 @@ export async function handleApiError(
   includeApiHint: boolean = true,
 ): Promise<void> {
   console.error(`Error ${action}:`, error);
-  let message = `❌ Error ${action}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+  const errText = escapeMarkdownV2(
+    error instanceof Error ? error.message : 'Unknown error',
+  );
+  const actionEsc = escapeMarkdownV2(action);
+  let message = `❌ *Error* ${actionEsc}: ${errText}`;
   if (includeApiHint) {
-    message += `\n\nCheck your Google Sheets API settings.`;
+    message += `\n\nCheck your Google Sheets API settings\\.`;
   }
   await replyErrorAndReset(ctx, message);
 }

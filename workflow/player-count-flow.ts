@@ -2,6 +2,7 @@ import { handleApiError, replyErrorAndReset } from '../bot-helpers';
 import { playerCountConfirmationKeyboard } from '../keyboards';
 import type { MyContext } from '../session';
 import { resetSession } from '../session';
+import { escapeMarkdownV2, replyMarkdownV2 } from '../telegram/markdown-v2';
 import { checkOverridesAndWrite } from './write-flow';
 
 /**
@@ -17,12 +18,12 @@ export async function proceedWithPlayerCountCheck(
   ) {
     await replyErrorAndReset(
       ctx,
-      '❌ Error: missing usernames or target column. Start over with /update',
+      '❌ *Error:* missing usernames or target column\\. Start over with /update',
     );
     return;
   }
 
-  await ctx.reply('⏳ Checking sheet...');
+  await replyMarkdownV2(ctx, '⏳ *Checking sheet*\\.\\.\\.');
 
   try {
     const sheetsClient = await ctx.services.createSheetsClient();
@@ -31,10 +32,12 @@ export async function proceedWithPlayerCountCheck(
     );
 
     if (nicknameRows.size === 0) {
-      await ctx.reply(
-        '❌ No matches found in the sheet.\n\n' +
-          `Sent usernames: ${ctx.session.usernames.join(', ')}\n\n` +
-          `Check that usernames in the sheet (column B) match the ones you sent.`,
+      const sent = ctx.session.usernames.map(escapeMarkdownV2).join(', ');
+      await replyMarkdownV2(
+        ctx,
+        '❌ *No matches found* in the sheet\\.\n\n' +
+          `*Sent usernames:* ${sent}\n\n` +
+          'Check that usernames in the sheet \\(column B\\) match the ones you sent\\.',
       );
       resetSession(ctx.session);
       return;
@@ -44,9 +47,10 @@ export async function proceedWithPlayerCountCheck(
     if (ctx.session.playerCount === undefined) {
       const recognizedCount = nicknameRows.size;
       ctx.session.state = 'awaiting_player_count_confirmation';
-      await ctx.reply(
-        `👥 I found ${recognizedCount} recognized username(s).\n\n` +
-          `Is ${recognizedCount} the total number of players who attended?`,
+      await replyMarkdownV2(
+        ctx,
+        `👥 I found *${recognizedCount}* recognized username\\(s\\)\\.\n\n` +
+          `Is *${recognizedCount}* the *total* number of players who attended?`,
         { reply_markup: playerCountConfirmationKeyboard(recognizedCount) },
       );
       ctx.session.nicknameRowsEntries = Array.from(nicknameRows.entries());

@@ -10,6 +10,7 @@ It supports both manual updates and poll-driven updates. With **`REDIS_URL`** se
 - Persist poll state in Redis when **`REDIS_URL`** is set (`poll:{pollId}`), or in-memory when it is not (development fallback) / when **`POLL_STORAGE=memory`** is set
 - Forward poll messages back to the bot to extract voters
 - Continue to column/date/cost/player-count workflow for Google Sheets updates
+- Record payments with `/money` (or a plain number like `1` or `1.5`, up to `20000`, in private chat); `/register` adds your name and `@username` in columns A and B
 - Protect existing values with confirmation before overwrite
 
 ## Usage
@@ -19,6 +20,8 @@ It supports both manual updates and poll-driven updates. With **`REDIS_URL`** se
 - `/start` - Show welcome/help text
 - `/poll` - Create trackable poll
 - `/update` - Start manual update workflow
+- `/money` - Write a payment to your cell (private chat; replaces the value)
+- `/register` - Add yourself to the sheet (column A: name, B: `@username`)
 - `/help` - Show command help
 - `/cancel` or `/abort` - Cancel current operation
 
@@ -34,8 +37,9 @@ It supports both manual updates and poll-driven updates. With **`REDIS_URL`** se
 
 ## Spreadsheet structure
 
+- Column `A`: display names
 - Column `B`: Telegram usernames (for example `@almoga`)
-- Date columns start from `E+`
+- Date columns start from `F` (row 1 date, 2 cost, 3 player count, 4 remaining); player payments are written in your row in the chosen date column
 - Player rows start from `7`
 
 Adjust constants in `constants.ts` if your sheet layout differs.

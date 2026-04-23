@@ -1,6 +1,17 @@
 import { expect } from 'bun:test';
 import type { RecordedApiCall } from './mock-telegram-api';
 
+/**
+ * Normalize Telegram MarkdownV2 text to plain readable text for stable tests.
+ */
+export function normalizeTelegramText(text: string): string {
+  return text
+    .replace(/\\([_*[\]()~`>#+=|{}.!-])/g, '$1')
+    .replace(/[*_~`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function expectTexts(
   calls: RecordedApiCall[],
   substr: string[],
@@ -12,8 +23,11 @@ export function expectTexts(
         ? c.method === 'sendMessage' || c.method === 'editMessageText'
         : c.method === method,
     )
-    .map((c) => (c.payload as { text?: string }).text ?? '');
+    .map((c) =>
+      normalizeTelegramText((c.payload as { text?: string }).text ?? ''),
+    );
   for (const s of substr) {
-    expect(texts.some((t) => t.includes(s))).toBe(true);
+    const needle = normalizeTelegramText(s);
+    expect(texts.some((t) => t.includes(needle))).toBe(true);
   }
 }
