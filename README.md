@@ -48,9 +48,10 @@ Adjust constants in `constants.ts` if your sheet layout differs.
 
 The bot supports two entry points: `/update` (manual) and forwarded poll (poll-based).
 Poll-based updates include a reconciliation step: after selecting the attendee
-poll option, the bot asks the real attendance count, lets you remove no-shows who
-did not play, then helps resolve missing attendees by searching the roster or
-adding a new player with a name and optional Telegram username.
+poll option, the bot asks the real attendance count, shows poll voters as
+buttons that remove no-shows, then lets you add missing attendees or confirm
+when everyone is set. Missing attendees can be resolved by searching the roster
+or adding a new player with a name and optional Telegram username.
 
 ```mermaid
 stateDiagram-v2
@@ -81,39 +82,47 @@ stateDiagram-v2
         CheckMetadata --> AskCost: Cost missing
         CheckMetadata --> AskUsernames: Manual metadata complete
         CheckMetadata --> AskRealCount: Poll metadata complete
-        AskDateName --> CheckMetadata: Date saved
-        AskCost --> CheckMetadata: Cost saved
+        AskDateName --> CheckMetadata: Date collected
+        AskCost --> CheckMetadata: Cost collected
 
         AskUsernames --> CheckPlayerCount: Usernames matched
         CheckPlayerCount --> ConfirmPlayerCount: Count missing
         CheckPlayerCount --> CheckOverride: Count exists
         ConfirmPlayerCount --> AskPlayerCount: User says no
         ConfirmPlayerCount --> CheckOverride: User confirms
-        AskPlayerCount --> CheckOverride: Count saved
+        AskPlayerCount --> CheckOverride: Count collected
 
-        AskRealCount --> RemoveNoShows: Count saved or overwritten
-        RemoveNoShows --> ResolveMissing: Missing attendees remain
-        RemoveNoShows --> CheckOverride: No missing attendees
+        AskRealCount --> ReviewPollAttendees: Count collected or overwritten in draft
+        ReviewPollAttendees --> ReviewPollAttendees: Remove poll voter or page
+        ReviewPollAttendees --> ReviewPollAttendees: Too many selected
+        ReviewPollAttendees --> MatchPollAttendees: Add attendee
+        ReviewPollAttendees --> MatchPollAttendees: Confirm attendees
+        MatchPollAttendees --> ResolveUnmatched: Unmatched poll voters remain
+        MatchPollAttendees --> ResolveMissing: Missing attendee slots remain
+        MatchPollAttendees --> CheckOverride: All attendees resolved
 
-        ResolveMissing --> SearchRoster: Search Roster
-        ResolveMissing --> CreatePlayer: Create Player immediately
+        ResolveUnmatched --> RegisterPlayer: Register next unmatched voter
+        RegisterPlayer --> ResolveUnmatched: More unmatched voters
+        RegisterPlayer --> ResolveMissing: Missing slots remain
+        RegisterPlayer --> CheckOverride: All attendees resolved
+
+        ResolveMissing --> SearchRoster: Add existing Player
+        ResolveMissing --> RegisterPlayer: Add new Player
         SearchRoster --> PickExisting: Matches found
         SearchRoster --> NoMatches: No matches found
         NoMatches --> SearchRoster: Try another query
-        NoMatches --> CreatePlayer: Create Player in Roster
+        NoMatches --> RegisterPlayer: Register new Player
         PickExisting --> ConfirmExisting: Pick a result
         PickExisting --> SearchRoster: Try another query
-        PickExisting --> CreatePlayer: Create Player instead
+        PickExisting --> RegisterPlayer: Register new Player instead
         ConfirmExisting --> ResolveMissing: Confirmed, more missing
         ConfirmExisting --> SearchRoster: Not this player
         ConfirmExisting --> CheckOverride: Confirmed, all resolved
-        CreatePlayer --> ResolveMissing: Player created, more missing
-        CreatePlayer --> CheckOverride: Player created, all resolved
 
-        CheckOverride --> ConfirmOverride: Conflicts found
+        CheckOverride --> ConfirmOverride: Conflicts found, no table changes yet
         CheckOverride --> WriteData: No conflicts
         ConfirmOverride --> WriteData: User decides
-        WriteData --> [*]: Done and reset
+        WriteData --> [*]: Write metadata, create pending Players, write attendance, reset
     }
 ```
 
@@ -121,7 +130,8 @@ stateDiagram-v2
 
 This subflow is used when Poll Reconciliation cannot match a Missing Attendee to
 an existing Player in the Roster, or when you choose to create a Player instead
-of selecting a search result.
+of selecting a search result. Before writing a new row, the bot searches the
+Roster by substring of the entered name and optional Telegram username.
 
 ```mermaid
 stateDiagram-v2
@@ -129,8 +139,15 @@ stateDiagram-v2
     StartCreatePlayer --> EnterPlayer: Ask for name and optional @username
     EnterPlayer --> InvalidInput: Empty name or invalid @username
     InvalidInput --> EnterPlayer: Try again
-    EnterPlayer --> ConfirmTelegram: Optional @username entered
-    EnterPlayer --> ConfirmNameOnly: No @username entered
+    EnterPlayer --> SearchExisting: Valid input
+    SearchExisting --> PossibleExisting: Possible existing Players found
+    SearchExisting --> ConfirmTelegram: No match, optional @username entered
+    SearchExisting --> ConfirmNameOnly: No match, no @username entered
+    PossibleExisting --> ConfirmExisting: User picks existing Player
+    ConfirmExisting --> UseExistingRosterRow: User confirms existing Player
+    ConfirmExisting --> PossibleExisting: User rejects picked Player
+    PossibleExisting --> ConfirmTelegram: Create new anyway with @username
+    PossibleExisting --> ConfirmNameOnly: Create new anyway without @username
     ConfirmTelegram --> EnterPlayer: User edits
     ConfirmNameOnly --> EnterPlayer: User edits
     ConfirmTelegram --> SaveOrUseExisting: User confirms clickable @username

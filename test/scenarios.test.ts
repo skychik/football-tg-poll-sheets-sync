@@ -13,6 +13,14 @@ import { expectTexts, normalizeTelegramText } from './support/test-assertions';
 const testKit = createTelegramTestKit();
 const { pollStorage: testPollStorage, setupTestBot } = testKit;
 
+function buttonTexts(message: Message | undefined): string[] {
+  return (
+    message?.reply_markup?.inline_keyboard
+      ?.flatMap((row) => row.map((button) => button.text))
+      .filter(Boolean) ?? []
+  );
+}
+
 beforeEach(() => {
   testKit.reset();
 });
@@ -270,6 +278,7 @@ describe('Telegram scenario tests', () => {
     await bot.handleUpdate(
       callbackQueryUpdate('pl:rm:@bob', getLastBotMessage() as Message),
     );
+    expect(calls.some((call) => call.method === 'deleteMessage')).toBe(true);
     await bot.handleUpdate(
       callbackQueryUpdate('pl:rmdone', getLastBotMessage() as Message),
     );
@@ -333,9 +342,21 @@ describe('Telegram scenario tests', () => {
       callbackQueryUpdate('col:use:F', getLastBotMessage() as Message),
     );
     await bot.handleUpdate(textMessageUpdate('2'));
+    const checklistMessage = getLastBotMessage() as Message;
+    const deletesBeforeAdd = calls.filter(
+      (call) => call.method === 'deleteMessage',
+    ).length;
     await bot.handleUpdate(
-      callbackQueryUpdate('pl:rmdone', getLastBotMessage() as Message),
+      callbackQueryUpdate('pl:addmissing', checklistMessage),
     );
+    expect(buttonTexts(checklistMessage)).toContain('Remove @alice');
+    expect(calls.filter((call) => call.method === 'deleteMessage').length).toBe(
+      deletesBeforeAdd,
+    );
+    expect(buttonTexts(getLastBotMessage())).toEqual([
+      '🔎 Add existing player',
+      '➕ Add new player',
+    ]);
     await bot.handleUpdate(textMessageUpdate('ivan'));
     await bot.handleUpdate(
       callbackQueryUpdate('pl:sp:1', getLastBotMessage() as Message),
@@ -348,6 +369,11 @@ describe('Telegram scenario tests', () => {
         'pl:confirm-existing:yes',
         getLastBotMessage() as Message,
       ),
+    );
+    expect(buttonTexts(getLastBotMessage())).toContain('Remove @alice');
+    expect(buttonTexts(getLastBotMessage())).toContain('✅ Confirm attendees');
+    await bot.handleUpdate(
+      callbackQueryUpdate('pl:rmdone', getLastBotMessage() as Message),
     );
 
     expectTexts(calls, [
@@ -408,8 +434,9 @@ describe('Telegram scenario tests', () => {
       callbackQueryUpdate('col:use:F', getLastBotMessage() as Message),
     );
     await bot.handleUpdate(textMessageUpdate('3'));
+    const checklistMessage = getLastBotMessage() as Message;
     await bot.handleUpdate(
-      callbackQueryUpdate('pl:rmdone', getLastBotMessage() as Message),
+      callbackQueryUpdate('pl:addmissing', checklistMessage),
     );
     await bot.handleUpdate(
       callbackQueryUpdate('pl:addnew', getLastBotMessage() as Message),
@@ -418,12 +445,24 @@ describe('Telegram scenario tests', () => {
     await bot.handleUpdate(
       callbackQueryUpdate('pl:confirm-new:yes', getLastBotMessage() as Message),
     );
+    expect(created).toEqual([]);
+    await bot.handleUpdate(
+      callbackQueryUpdate('pl:addmissing', checklistMessage),
+    );
+    expect(normalizeTelegramText(getLastBotMessage()?.text ?? '')).toContain(
+      'Pavel NoNick',
+    );
     await bot.handleUpdate(
       callbackQueryUpdate('pl:addnew', getLastBotMessage() as Message),
     );
     await bot.handleUpdate(textMessageUpdate('Sergey Handle @sergey_handle'));
     await bot.handleUpdate(
       callbackQueryUpdate('pl:confirm-new:yes', getLastBotMessage() as Message),
+    );
+    expect(buttonTexts(getLastBotMessage())).toContain('Remove @alice');
+    expect(buttonTexts(getLastBotMessage())).toContain('✅ Confirm attendees');
+    await bot.handleUpdate(
+      callbackQueryUpdate('pl:rmdone', getLastBotMessage() as Message),
     );
 
     expectTexts(calls, [
@@ -439,6 +478,92 @@ describe('Telegram scenario tests', () => {
       ['@alice', 7],
       ['Pavel NoNick', 20],
       ['@sergey_handle', 21],
+    ]);
+  });
+
+  test('poll reconciliation checks full possible existing player list before creating', async () => {
+    await testPollStorage.savePollData('poll_reconcile_create_existing', {
+      question: 'When?',
+      options: ['Play'],
+      votes: { '0': ['@alice'] },
+    });
+
+    const created: Array<{ row: number; name: string; nickname?: string }> = [];
+    let writeRows: Array<[string, number]> = [];
+    testKit.setSheetsClient(
+      baseSheets({
+        findLastDateColumn: async () => ({ column: 'F', date: '12 Apr' }),
+        getColumnMetadata: async () => ({ date: '12 Apr', cost: 700 }),
+        findNicknameRows: async () => new Map([['@alice', 7]]),
+        listPlayers: async () => [
+          { row: 7, name: 'Alice', nickname: '@alice' },
+          { row: 8, name: 'Boris Good', nickname: '@boris_good' },
+          { row: 9, name: 'Boris Better', nickname: '@boris_better' },
+          { row: 10, name: 'Boris Fast', nickname: '@boris_fast' },
+          { row: 11, name: 'Boris Left', nickname: '@boris_left' },
+          { row: 12, name: 'Boris Right', nickname: '@boris_right' },
+          { row: 13, name: 'Boris Last', nickname: '@boris_last' },
+        ],
+        findFirstRowWithEmptyNameAndTg: async () => 20,
+        writeRegisterRow: async (row, name, nickname) => {
+          created.push({ row, name, nickname });
+        },
+        writeZeros: async (rows) => {
+          writeRows = Array.from(rows.entries());
+          return { updated: rows.size, notFound: [] };
+        },
+      }),
+    );
+
+    const { bot, calls, getLastBotMessage } = setupTestBot();
+    await bot.handleUpdate(
+      pollMessageUpdate({
+        pollId: 'poll_reconcile_create_existing',
+        question: 'When?',
+        options: ['Play'],
+        forward: true,
+      }),
+    );
+    await bot.handleUpdate(textMessageUpdate('1'));
+    await bot.handleUpdate(textMessageUpdate('1'));
+    await bot.handleUpdate(
+      callbackQueryUpdate('col:use:F', getLastBotMessage() as Message),
+    );
+    await bot.handleUpdate(textMessageUpdate('2'));
+    await bot.handleUpdate(
+      callbackQueryUpdate('pl:addmissing', getLastBotMessage() as Message),
+    );
+    await bot.handleUpdate(
+      callbackQueryUpdate('pl:addnew', getLastBotMessage() as Message),
+    );
+    await bot.handleUpdate(textMessageUpdate('Boris Unknown @boris'));
+    expectTexts(calls, ['Possible existing players', 'page 1/2']);
+    expect(buttonTexts(getLastBotMessage())).toContain('Next ▶️');
+    await bot.handleUpdate(
+      callbackQueryUpdate('pl:cmp:1', getLastBotMessage() as Message),
+    );
+    expectTexts(calls, ['page 2/2']);
+    expect(buttonTexts(getLastBotMessage())).toContain(
+      'Boris Last / @boris_last',
+    );
+    await bot.handleUpdate(
+      callbackQueryUpdate('pl:pick:5', getLastBotMessage() as Message),
+    );
+    await bot.handleUpdate(
+      callbackQueryUpdate(
+        'pl:confirm-existing:yes',
+        getLastBotMessage() as Message,
+      ),
+    );
+    await bot.handleUpdate(
+      callbackQueryUpdate('pl:rmdone', getLastBotMessage() as Message),
+    );
+
+    expectTexts(calls, ['Possible existing players', 'Boris Last']);
+    expect(created).toEqual([]);
+    expect(writeRows).toEqual([
+      ['@alice', 7],
+      ['@boris_last', 13],
     ]);
   });
 
@@ -500,6 +625,9 @@ describe('Telegram scenario tests', () => {
     await bot.handleUpdate(
       callbackQueryUpdate('pl:confirm-new:yes', getLastBotMessage() as Message),
     );
+    await bot.handleUpdate(
+      callbackQueryUpdate('pl:rmdone', getLastBotMessage() as Message),
+    );
 
     expectTexts(calls, ['@new_voter', 'Updated 2 record']);
     expect(created).toEqual([
@@ -551,7 +679,7 @@ describe('Telegram scenario tests', () => {
     );
     await bot.handleUpdate(textMessageUpdate('2'));
     await bot.handleUpdate(
-      callbackQueryUpdate('pl:rmdone', getLastBotMessage() as Message),
+      callbackQueryUpdate('pl:addmissing', getLastBotMessage() as Message),
     );
     await bot.handleUpdate(textMessageUpdate('zzzz'));
     await bot.handleUpdate(
@@ -566,6 +694,9 @@ describe('Telegram scenario tests', () => {
         'pl:confirm-existing:yes',
         getLastBotMessage() as Message,
       ),
+    );
+    await bot.handleUpdate(
+      callbackQueryUpdate('pl:rmdone', getLastBotMessage() as Message),
     );
 
     expectTexts(calls, ['No matches', 'Try another query', 'Boris Good']);

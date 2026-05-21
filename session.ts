@@ -47,8 +47,11 @@ export interface SessionData {
   pollSearchPage?: number;
   pollUnknownQueries?: string[];
   pollPendingPlayer?: { row: number; name: string; nickname?: string };
+  pollExistingConfirmationSource?: 'search' | 'create';
   pollPendingNewName?: string;
   pollPendingNewNickname?: string;
+  pollPendingNewAttendees?: Array<{ name: string; nickname?: string }>;
+  pollCollectionMessageId?: number;
   columnMatches?: Array<{ column: string; date: string }>; // For column selection when multiple matches found
   /** /money: amount the user asked to write (replaces target cell) */
   moneyAmount?: number;
@@ -95,8 +98,11 @@ export function resetSession(session: SessionData): void {
   session.pollSearchPage = undefined;
   session.pollUnknownQueries = undefined;
   session.pollPendingPlayer = undefined;
+  session.pollExistingConfirmationSource = undefined;
   session.pollPendingNewName = undefined;
   session.pollPendingNewNickname = undefined;
+  session.pollPendingNewAttendees = undefined;
+  session.pollCollectionMessageId = undefined;
   session.columnMatches = undefined;
   session.moneyAmount = undefined;
   session.moneyResumeAfterRegister = undefined;

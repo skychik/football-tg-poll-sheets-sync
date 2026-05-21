@@ -3,12 +3,12 @@ import { handleApiError, replyErrorAndReset } from '../bot-helpers';
 import { ERR_SESSION_DATA_LOST } from '../constants';
 import { CallbackPrefix } from '../keyboards';
 import type { MyContext } from '../session';
-import { resetSession } from '../session';
 import type { PlayerRosterEntry } from '../sheets/sheets-types';
 import { escapeMarkdownV2, replyMarkdownV2 } from '../telegram/markdown-v2';
 import { checkOverridesAndWrite } from '../workflow/write-flow';
 
 const PAGE_SIZE = 5;
+type ReplyOptions = Parameters<MyContext['reply']>[1];
 
 function attendeeLabel(player: PlayerRosterEntry): string {
   if (player.name && player.nickname)
@@ -166,8 +166,86 @@ function addResolvedAttendee(ctx: MyContext, player: PlayerRosterEntry): void {
   ]);
 }
 
+function addPendingNewAttendee(
+  ctx: MyContext,
+  attendee: { name: string; nickname?: string },
+): void {
+  ctx.session.pollPendingNewAttendees = [
+    ...(ctx.session.pollPendingNewAttendees ?? []),
+    attendee,
+  ];
+}
+
+function uniquePlayersByRow(players: PlayerRosterEntry[]): PlayerRosterEntry[] {
+  const seenRows = new Set<number>();
+  const result: PlayerRosterEntry[] = [];
+  for (const player of players) {
+    if (seenRows.has(player.row)) continue;
+    seenRows.add(player.row);
+    result.push(player);
+  }
+  return result;
+}
+
+function unresolvedRosterResults(
+  ctx: MyContext,
+  results: PlayerRosterEntry[],
+): PlayerRosterEntry[] {
+  const existingRows = new Set(
+    (ctx.session.pollResolvedAttendeesEntries ?? []).map(([, row]) => row),
+  );
+  return uniquePlayersByRow(results).filter(
+    (player) => !existingRows.has(player.row),
+  );
+}
+
 function remainingMissing(ctx: MyContext): number {
   return Math.max(0, ctx.session.pollUnknownQueries?.length ?? 0);
+}
+
+function currentAttendeeLabels(ctx: MyContext): string[] {
+  return [
+    ...(ctx.session.pollResolvedAttendeesEntries ?? []).map(([label]) => label),
+    ...(ctx.session.pollPendingNewAttendees ?? []).map(
+      (attendee) => attendee.nickname || attendee.name,
+    ),
+  ];
+}
+
+function currentAttendeeCount(ctx: MyContext): number {
+  const remaining = ctx.session.pollRemainingUsernames ?? [];
+  const remainingSet = new Set(remaining);
+  const extraResolved = (ctx.session.pollResolvedAttendeesEntries ?? []).filter(
+    ([label]) => !remainingSet.has(label),
+  );
+  const extraPending = (ctx.session.pollPendingNewAttendees ?? []).filter(
+    (attendee) => !remainingSet.has(attendee.nickname || attendee.name),
+  );
+  return remaining.length + extraResolved.length + extraPending.length;
+}
+
+async function clearPollCollectionMessage(ctx: MyContext): Promise<void> {
+  const messageId = ctx.session.pollCollectionMessageId;
+  const chatId = ctx.chat?.id;
+  if (!messageId || !chatId) return;
+
+  try {
+    await ctx.api.deleteMessage(chatId, messageId);
+  } catch {
+    // The message may already be gone or too old to delete. Keep the flow moving.
+  } finally {
+    ctx.session.pollCollectionMessageId = undefined;
+  }
+}
+
+async function replyPollCollectionMarkdownV2(
+  ctx: MyContext,
+  text: string,
+  other?: ReplyOptions,
+): Promise<void> {
+  await clearPollCollectionMessage(ctx);
+  const message = await replyMarkdownV2(ctx, text, other);
+  ctx.session.pollCollectionMessageId = message.message_id;
 }
 
 async function proceedAfterResolved(ctx: MyContext): Promise<void> {
@@ -178,22 +256,30 @@ async function proceedAfterResolved(ctx: MyContext): Promise<void> {
   }
 
   const entries = ctx.session.pollResolvedAttendeesEntries ?? [];
-  if (!ctx.session.targetColumn || entries.length === 0) {
+  const pendingNew = ctx.session.pollPendingNewAttendees ?? [];
+  if (!ctx.session.targetColumn || entries.length + pendingNew.length === 0) {
     await replyErrorAndReset(ctx, ERR_SESSION_DATA_LOST);
     return;
   }
 
+  await clearPollCollectionMessage(ctx);
   const nicknameRows = new Map<string, number>(entries);
   ctx.session.nicknameRowsEntries = entries;
-  ctx.session.usernames = entries.map(([label]) => label);
-  const sheets = await ctx.services.createSheetsClient();
-  await sheets.writeColumnMetadata(
-    ctx.session.targetColumn,
-    undefined,
-    undefined,
-    ctx.session.playerCount,
-  );
+  ctx.session.usernames = [
+    ...entries.map(([label]) => label),
+    ...pendingNew.map((attendee) => attendee.nickname || attendee.name),
+  ];
   await checkOverridesAndWrite(ctx, nicknameRows);
+}
+
+async function continueAfterAttendeeAdded(ctx: MyContext): Promise<void> {
+  const unknownQueries = ctx.session.pollUnknownQueries ?? [];
+  if (unknownQueries.length > 0) {
+    await askMissingQuery(ctx);
+    return;
+  }
+
+  await showNoShowReview(ctx, 0);
 }
 
 export async function startPollAttendanceCount(ctx: MyContext): Promise<void> {
@@ -246,12 +332,17 @@ export async function handlePollNoShowReviewText(
 
   await replyMarkdownV2(
     ctx,
-    'Use the buttons to remove no\\-shows, then press *Done*\\.',
+    'Use the buttons to remove no\\-shows, add missing attendees, or confirm when everyone is set\\.',
   );
   return true;
 }
 
-function noShowKeyboard(usernames: string[], page: number): InlineKeyboard {
+function noShowKeyboard(
+  usernames: string[],
+  page: number,
+  attendanceCount: number,
+  currentCount: number,
+): InlineKeyboard {
   const keyboard = new InlineKeyboard();
   const totalPages = Math.max(1, Math.ceil(usernames.length / PAGE_SIZE));
   const start = page * PAGE_SIZE;
@@ -272,7 +363,15 @@ function noShowKeyboard(usernames: string[], page: number): InlineKeyboard {
       keyboard.text('Next ▶️', `${CallbackPrefix.PLAYER}rmp:${page + 1}`);
     keyboard.row();
   }
-  keyboard.text('✅ Done', `${CallbackPrefix.PLAYER}rmdone`);
+
+  if (currentCount < attendanceCount) {
+    keyboard.text('➕ Add attendee', `${CallbackPrefix.PLAYER}addmissing`);
+  } else if (currentCount === attendanceCount) {
+    keyboard.text('✅ Confirm attendees', `${CallbackPrefix.PLAYER}rmdone`);
+  } else {
+    keyboard.text('Remove more no-shows', `${CallbackPrefix.PLAYER}rmwait`);
+  }
+
   return keyboard;
 }
 
@@ -288,11 +387,25 @@ async function showNoShowReview(ctx: MyContext, page: number): Promise<void> {
   const removedText = removed.length
     ? `\n\nRemoved:\n${removed.map((u) => `• ${escapeMarkdownV2(u)}`).join('\n')}`
     : '';
+  const selected = usernames.length;
+  const currentCount = currentAttendeeCount(ctx);
+  const extraAttendees = currentAttendeeLabels(ctx).filter(
+    (label) => !usernames.includes(label),
+  );
+  const extraText = extraAttendees.length
+    ? `\n\nAdded attendees:\n${extraAttendees.map((label) => `• ${escapeMarkdownV2(label)}`).join('\n')}`
+    : '';
+  const action =
+    currentCount > total
+      ? `Remove *${currentCount - total}* attendee${currentCount - total === 1 ? '' : 's'} before continuing\\.`
+      : currentCount < total
+        ? `Add *${total - currentCount}* missing attendee${total - currentCount === 1 ? '' : 's'}\\.`
+        : 'All attendees are set\\. Confirm to continue\\.';
 
-  await replyMarkdownV2(
+  await replyPollCollectionMarkdownV2(
     ctx,
-    `Real attendance count: *${total}*\n\nRemove voters who did *not* play:\n${list}${removedText}`,
-    { reply_markup: noShowKeyboard(usernames, page) },
+    `Real attendance count: *${total}*\nSelected from poll: *${selected}*\nCurrent attendees: *${currentCount}*\n\nRemove voters who did *not* play:\n${list}${removedText}${extraText}\n\n${action}`,
+    { reply_markup: noShowKeyboard(usernames, page, total, currentCount) },
   );
 }
 
@@ -306,6 +419,9 @@ export async function handlePlayerCallback(
     ctx.session.pollRemainingUsernames = remaining.filter(
       (u) => u !== username,
     );
+    ctx.session.pollResolvedAttendeesEntries = (
+      ctx.session.pollResolvedAttendeesEntries ?? []
+    ).filter(([label]) => label !== username);
     ctx.session.pollRemovedUsernames = [
       ...(ctx.session.pollRemovedUsernames ?? []),
       username,
@@ -324,8 +440,33 @@ export async function handlePlayerCallback(
     return true;
   }
 
+  if (data === 'addmissing') {
+    await startAddAttendeeFlow(ctx);
+    return true;
+  }
+
+  if (data === 'searchmissing') {
+    await askMissingQuery(ctx, true);
+    return true;
+  }
+
+  if (data === 'rmwait') {
+    const selected = ctx.session.pollRemainingUsernames?.length ?? 0;
+    const total = ctx.session.playerCount ?? 0;
+    await replyMarkdownV2(
+      ctx,
+      `You still have *${selected}* poll voters selected, but attendance count is *${total}*\\. Remove no\\-shows before continuing\\.`,
+    );
+    return true;
+  }
+
   if (data.startsWith('sp:')) {
     await showSearchResults(ctx, parseInt(data.slice(3), 10) || 0);
+    return true;
+  }
+
+  if (data.startsWith('cmp:')) {
+    await showCreateMatchResults(ctx, parseInt(data.slice(4), 10) || 0);
     return true;
   }
 
@@ -337,6 +478,9 @@ export async function handlePlayerCallback(
       return true;
     }
     ctx.session.pollPendingPlayer = player;
+    ctx.session.pollExistingConfirmationSource = ctx.session.pollPendingNewName
+      ? 'create'
+      : 'search';
     await showExistingPlayerConfirmation(ctx, player);
     return true;
   }
@@ -351,6 +495,21 @@ export async function handlePlayerCallback(
     return true;
   }
 
+  if (data === 'editnew') {
+    await askNewAttendeeInput(ctx);
+    return true;
+  }
+
+  if (data === 'createanyway') {
+    const name = ctx.session.pollPendingNewName;
+    if (!name) {
+      await replyErrorAndReset(ctx, ERR_SESSION_DATA_LOST);
+      return true;
+    }
+    await showNewAttendeeConfirmation(ctx, name);
+    return true;
+  }
+
   if (data === 'confirm-existing:yes') {
     const player = ctx.session.pollPendingPlayer;
     if (!player) {
@@ -362,12 +521,21 @@ export async function handlePlayerCallback(
       ctx.session.pollUnknownQueries ?? []
     ).slice(1);
     ctx.session.pollPendingPlayer = undefined;
-    await proceedAfterResolved(ctx);
+    ctx.session.pollExistingConfirmationSource = undefined;
+    ctx.session.pollPendingNewName = undefined;
+    ctx.session.pollPendingNewNickname = undefined;
+    await continueAfterAttendeeAdded(ctx);
     return true;
   }
 
   if (data === 'confirm-existing:no') {
     ctx.session.pollPendingPlayer = undefined;
+    if (ctx.session.pollExistingConfirmationSource === 'create') {
+      ctx.session.pollExistingConfirmationSource = undefined;
+      await showCreateMatchResults(ctx, ctx.session.pollSearchPage ?? 0);
+      return true;
+    }
+    ctx.session.pollExistingConfirmationSource = undefined;
     await askMissingQuery(ctx, true);
     return true;
   }
@@ -386,6 +554,25 @@ export async function handlePlayerCallback(
 }
 
 async function finishNoShowReview(ctx: MyContext): Promise<void> {
+  await beginMissingAttendeeResolution(ctx);
+}
+
+async function startAddAttendeeFlow(ctx: MyContext): Promise<void> {
+  if (ctx.session.playerCount !== undefined) {
+    const currentCount = currentAttendeeCount(ctx);
+    if (currentCount >= ctx.session.playerCount) {
+      await showNoShowReview(ctx, ctx.session.pollSearchPage ?? 0);
+      return;
+    }
+  }
+
+  await beginMissingAttendeeResolution(ctx, { promptOnly: true });
+}
+
+async function beginMissingAttendeeResolution(
+  ctx: MyContext,
+  options: { promptOnly?: boolean } = {},
+): Promise<void> {
   if (!ctx.session.targetColumn || ctx.session.playerCount === undefined) {
     await replyErrorAndReset(ctx, ERR_SESSION_DATA_LOST);
     return;
@@ -408,17 +595,46 @@ async function finishNoShowReview(ctx: MyContext): Promise<void> {
       sheets.listPlayers(),
     ]);
 
+    const pollRosterEntries = Array.from(nicknameRows.entries());
+    const resolvedEntries = removeDuplicateRows([
+      ...pollRosterEntries,
+      ...(ctx.session.pollResolvedAttendeesEntries ?? []),
+    ]);
     ctx.session.pollRosterEntries = roster;
-    ctx.session.pollResolvedAttendeesEntries = Array.from(
-      nicknameRows.entries(),
-    );
+    ctx.session.pollResolvedAttendeesEntries = resolvedEntries;
 
-    const unmatchedVoters = remaining.filter((u) => !nicknameRows.has(u));
-    const extraSlots = Math.max(0, ctx.session.playerCount - remaining.length);
+    const resolvedLabels = new Set(resolvedEntries.map(([label]) => label));
+    const pendingNew = ctx.session.pollPendingNewAttendees ?? [];
+    const pendingLabels = new Set(
+      pendingNew.map((attendee) => attendee.nickname || attendee.name),
+    );
+    const pendingExtraCount = pendingNew.filter(
+      (attendee) => !remaining.includes(attendee.nickname || attendee.name),
+    ).length;
+    const extraResolvedCount = resolvedEntries.filter(
+      ([label]) => !remaining.includes(label),
+    ).length;
+
+    const unmatchedVoters = remaining.filter(
+      (u) =>
+        !nicknameRows.has(u) && !resolvedLabels.has(u) && !pendingLabels.has(u),
+    );
+    const extraSlots = Math.max(
+      0,
+      ctx.session.playerCount -
+        remaining.length -
+        extraResolvedCount -
+        pendingExtraCount,
+    );
     ctx.session.pollUnknownQueries = [
       ...unmatchedVoters,
       ...Array.from({ length: extraSlots }, () => ''),
     ];
+
+    if (options.promptOnly) {
+      await askMissingQuery(ctx);
+      return;
+    }
 
     await proceedAfterResolved(ctx);
   } catch (error) {
@@ -435,21 +651,25 @@ async function askMissingQuery(
     : ((ctx.session.pollUnknownQueries ?? [])[0] ?? '');
   ctx.session.state = 'awaiting_poll_missing_query';
   const missing = remainingMissing(ctx);
+  const current = currentAttendeeLabels(ctx);
+  const currentText = current.length
+    ? `\n\nCurrent attendees:\n${current.map((label) => `• ${escapeMarkdownV2(label)}`).join('\n')}`
+    : '';
   const prompt = nextQuery
-    ? `I could not find *${escapeMarkdownV2(nextQuery)}* in the roster\\. Type a name or Telegram username to search, or add a new player\\.`
-    : `Who is missing? Type a name or Telegram username to search the roster\\.`;
+    ? `I could not find *${escapeMarkdownV2(nextQuery)}* in the roster\\. Search for an existing player or add a new player\\.`
+    : `Who is missing? Search for an existing player or add a new player\\.`;
   await replyMarkdownV2(
     ctx,
-    `Missing attendees left: *${missing}*\n\n${prompt}`,
+    `Missing attendees left: *${missing}*${currentText}\n\n${prompt}`,
     { reply_markup: missingQueryKeyboard() },
   );
 }
 
 function missingQueryKeyboard(): InlineKeyboard {
-  return new InlineKeyboard().text(
-    '➕ Add new player',
-    `${CallbackPrefix.PLAYER}addnew`,
-  );
+  return new InlineKeyboard()
+    .text('🔎 Add existing player', `${CallbackPrefix.PLAYER}searchmissing`)
+    .row()
+    .text('➕ Add new player', `${CallbackPrefix.PLAYER}addnew`);
 }
 
 export async function handlePollMissingQuery(
@@ -470,12 +690,7 @@ export async function handlePollMissingQuery(
   }
 
   const roster = ctx.session.pollRosterEntries ?? [];
-  const existingRows = new Set(
-    (ctx.session.pollResolvedAttendeesEntries ?? []).map(([, row]) => row),
-  );
-  const results = searchRoster(roster, query).filter(
-    (player) => !existingRows.has(player.row),
-  );
+  const results = unresolvedRosterResults(ctx, searchRoster(roster, query));
   ctx.session.pollSearchResults = results;
   ctx.session.pollSearchPage = 0;
 
@@ -585,20 +800,88 @@ export async function handleNewAttendeeInput(
   ctx.session.pollPendingNewNickname =
     parsed.nickname ?? ctx.session.pollPendingNewNickname;
 
+  const possibleExisting = findCreateMatches(ctx);
+  if (possibleExisting.length > 0) {
+    ctx.session.pollSearchResults = possibleExisting;
+    ctx.session.pollSearchPage = 0;
+    await showCreateMatchResults(ctx, 0);
+    return true;
+  }
+
+  await showNewAttendeeConfirmation(ctx, parsed.name);
+  return true;
+}
+
+function findCreateMatches(ctx: MyContext): PlayerRosterEntry[] {
+  const roster = ctx.session.pollRosterEntries ?? [];
+  const name = ctx.session.pollPendingNewName ?? '';
+  const nickname = ctx.session.pollPendingNewNickname ?? '';
+  const nameTokens = name
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
+  const queries = [name, ...nameTokens, nickname].filter(Boolean);
+  const results = queries.flatMap((query) => searchRoster(roster, query));
+  return unresolvedRosterResults(ctx, results);
+}
+
+async function showCreateMatchResults(
+  ctx: MyContext,
+  page: number,
+): Promise<void> {
+  const results = ctx.session.pollSearchResults ?? [];
+  const keyboard = new InlineKeyboard();
+  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
+  const start = safePage * PAGE_SIZE;
+
+  results.slice(start, start + PAGE_SIZE).forEach((player, offset) => {
+    const idx = start + offset;
+    keyboard.text(attendeeLabel(player), `${CallbackPrefix.PLAYER}pick:${idx}`);
+    keyboard.row();
+  });
+
+  if (totalPages > 1) {
+    if (safePage > 0)
+      keyboard.text('◀️ Prev', `${CallbackPrefix.PLAYER}cmp:${safePage - 1}`);
+    if (safePage < totalPages - 1)
+      keyboard.text('Next ▶️', `${CallbackPrefix.PLAYER}cmp:${safePage + 1}`);
+    keyboard.row();
+  }
+
+  keyboard
+    .text('➕ Create new anyway', `${CallbackPrefix.PLAYER}createanyway`)
+    .row()
+    .text('✏️ Edit', `${CallbackPrefix.PLAYER}editnew`);
+
+  ctx.session.pollSearchPage = safePage;
+  const name = ctx.session.pollPendingNewName ?? '';
+  const nickname = ctx.session.pollPendingNewNickname;
+  const queryText = nickname ? `${name} / ${nickname}` : name;
+  await replyMarkdownV2(
+    ctx,
+    `Possible existing players for *${escapeMarkdownV2(queryText)}* \\(page *${safePage + 1}/${totalPages}*\\):`,
+    { reply_markup: keyboard },
+  );
+}
+
+async function showNewAttendeeConfirmation(
+  ctx: MyContext,
+  name: string,
+): Promise<void> {
   const nickname = ctx.session.pollPendingNewNickname;
   const nickLine = nickname
     ? `\nTelegram: ${escapeMarkdownV2(nickname)}\n\nOpen/check ${escapeMarkdownV2(nickname)} and confirm this is the right profile\\.`
     : '\nTelegram: _none_';
   await replyMarkdownV2(
     ctx,
-    `Create new player?\n\nName: *${escapeMarkdownV2(parsed.name)}*${nickLine}`,
+    `Create new player?\n\nName: *${escapeMarkdownV2(name)}*${nickLine}`,
     {
       reply_markup: new InlineKeyboard()
         .text('✅ Create', `${CallbackPrefix.PLAYER}confirm-new:yes`)
         .text('❌ Edit', `${CallbackPrefix.PLAYER}confirm-new:no`),
     },
   );
-  return true;
 }
 
 async function savePendingNewAttendee(ctx: MyContext): Promise<void> {
@@ -623,23 +906,12 @@ async function savePendingNewAttendee(ctx: MyContext): Promise<void> {
           ctx,
           `That Telegram username is already in the roster at row *${existingRow}*\\. Added it to this update\\.`,
         );
-        await proceedAfterResolved(ctx);
+        await continueAfterAttendeeAdded(ctx);
         return;
       }
     }
 
-    const row = await sheets.findFirstRowWithEmptyNameAndTg();
-    if (row === null) {
-      await replyMarkdownV2(
-        ctx,
-        '❌ *No free row:* could not find a row with empty *A* and *B* \\(from row *7*\\)\\.',
-      );
-      resetSession(ctx.session);
-      return;
-    }
-
-    await sheets.writeRegisterRow(row, name, nickname ?? '');
-    addResolvedAttendee(ctx, { row, name, nickname });
+    addPendingNewAttendee(ctx, { name, nickname });
     ctx.session.pollUnknownQueries = (
       ctx.session.pollUnknownQueries ?? []
     ).slice(1);
@@ -648,9 +920,9 @@ async function savePendingNewAttendee(ctx: MyContext): Promise<void> {
 
     await replyMarkdownV2(
       ctx,
-      `✅ Added *${escapeMarkdownV2(name)}*${nickname ? ` / *${escapeMarkdownV2(nickname)}*` : ''} at row *${row}*\\.`,
+      `✅ Added *${escapeMarkdownV2(name)}*${nickname ? ` / *${escapeMarkdownV2(nickname)}*` : ''} to this match\\. It will be created in the roster when the final update is written\\.`,
     );
-    await proceedAfterResolved(ctx);
+    await continueAfterAttendeeAdded(ctx);
   } catch (error) {
     await handleApiError(ctx, error, 'adding new attendee');
   }
