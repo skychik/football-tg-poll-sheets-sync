@@ -1,11 +1,12 @@
 import type { Bot } from 'grammy';
 import {
   buildPollOptionsText,
+  buildPollVotersText,
   getPollDataOrError,
   replyErrorAndReset,
 } from '../bot-helpers';
 import { pollIntentKeyboard, pollOptionKeyboard } from '../keyboards';
-import { getPollById } from '../poll';
+import { getPollById, getPollOptionByNumber } from '../poll';
 import type { MyContext } from '../session';
 import { resetSession } from '../session';
 import { startColumnDetectionFlow } from '../workflow';
@@ -70,7 +71,7 @@ export async function handlePollIntent(
 
     await ctx.reply(
       `Which option contains the attending players?\n\n${optionsText}`,
-      { reply_markup: pollOptionKeyboard(pollData.options, pollData.votes) },
+      { reply_markup: pollOptionKeyboard(pollData) },
     );
     return true;
   }
@@ -80,15 +81,7 @@ export async function handlePollIntent(
     if (!result) return true;
 
     const { pollData } = result;
-
-    let response = `📊 Poll: "${pollData.question}"\n\n`;
-    pollData.options.forEach((option, index) => {
-      const voters = pollData.votes.get(index) || new Set();
-      const voterList = Array.from(voters).join(' ');
-      response += `${index + 1}. ${option}: ${voterList || '(no votes)'}\n`;
-    });
-
-    await ctx.reply(response);
+    await ctx.reply(buildPollVotersText(pollData));
     resetSession(ctx.session);
     return true;
   }
@@ -121,9 +114,8 @@ export async function handlePollOptionSelection(
   if (!result) return true;
 
   const { pollData } = result;
-
-  const optionIndex = optionNum - 1;
-  if (optionIndex < 0 || optionIndex >= pollData.options.length) {
+  const selectedOption = getPollOptionByNumber(pollData, optionNum);
+  if (!selectedOption) {
     await ctx.reply(
       `❌ Invalid option number. Please choose between 1 and ${pollData.options.length}.`,
     );
@@ -131,7 +123,7 @@ export async function handlePollOptionSelection(
   }
 
   // Extract usernames from selected option
-  const voters = pollData.votes.get(optionIndex) || new Set();
+  const voters = pollData.votes.get(selectedOption.id) || new Set();
   const usernames = Array.from(voters);
 
   if (usernames.length === 0) {
@@ -145,7 +137,7 @@ export async function handlePollOptionSelection(
   ctx.session.pollQuestion = undefined;
 
   await ctx.reply(
-    `✅ Selected option: "${pollData.options[optionIndex]}"\n` +
+    `✅ Selected option: "${selectedOption.text}"\n` +
       `👥 Attending players: ${usernames.join(' ')}`,
   );
 

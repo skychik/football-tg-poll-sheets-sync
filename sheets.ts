@@ -568,11 +568,11 @@ async function initSheetsClient(): Promise<SheetsClient> {
 }
 
 export {
+  type ColumnMetadata,
   columnLetterToIndex,
+  type ExistingValue,
   getNextColumnLetter,
   indexToColumnLetter,
   initSheetsClient,
-  type ColumnMetadata,
-  type ExistingValue,
   type SheetsClient,
 };

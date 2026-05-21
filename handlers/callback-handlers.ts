@@ -1,12 +1,14 @@
 import type { Bot } from 'grammy';
 import {
   buildPollOptionsText,
+  buildPollVotersText,
   getPollDataOrError,
   handleApiError,
   replyErrorAndReset,
 } from '../bot-helpers';
 import { ERR_SESSION_DATA_LOST } from '../constants';
 import { CallbackPrefix, pollOptionKeyboard } from '../keyboards';
+import { getPollOptionById } from '../poll';
 import type { MyContext } from '../session';
 import { resetSession } from '../session';
 import { initSheetsClient } from '../sheets';
@@ -128,7 +130,7 @@ export function registerCallbackHandlers(bot: Bot<MyContext>): void {
         await ctx.editMessageText(
           `Which option contains the attending players?\n\n${optionsText}`,
           {
-            reply_markup: pollOptionKeyboard(pollData.options, pollData.votes),
+            reply_markup: pollOptionKeyboard(pollData),
           },
         );
         return;
@@ -139,15 +141,7 @@ export function registerCallbackHandlers(bot: Bot<MyContext>): void {
         if (!result) return;
 
         const { pollData } = result;
-
-        let response = `📊 Poll: "${pollData.question}"\n\n`;
-        pollData.options.forEach((option, index) => {
-          const voters = pollData.votes.get(index) || new Set();
-          const voterList = Array.from(voters).join(' ');
-          response += `${index + 1}. ${option}: ${voterList || '(no votes)'}\n`;
-        });
-
-        await ctx.editMessageText(response);
+        await ctx.editMessageText(buildPollVotersText(pollData));
         resetSession(ctx.session);
         return;
       }
@@ -158,13 +152,13 @@ export function registerCallbackHandlers(bot: Bot<MyContext>): void {
   bot.callbackQuery(
     new RegExp(`^${CallbackPrefix.POLL_OPTION}`),
     async (ctx) => {
-      const data = ctx.callbackQuery.data.slice(
+      const encodedOptionId = ctx.callbackQuery.data.slice(
         CallbackPrefix.POLL_OPTION.length,
       );
-      const optionIndex = parseInt(data, 10);
+      const optionId = decodeURIComponent(encodedOptionId);
       await ctx.answerCallbackQuery();
 
-      if (Number.isNaN(optionIndex)) {
+      if (!optionId) {
         await ctx.editMessageText('❌ Invalid option.');
         return;
       }
@@ -173,16 +167,16 @@ export function registerCallbackHandlers(bot: Bot<MyContext>): void {
       if (!result) return;
 
       const { pollData } = result;
-
-      if (optionIndex < 0 || optionIndex >= pollData.options.length) {
+      const selectedOption = getPollOptionById(pollData, optionId);
+      if (!selectedOption) {
         await ctx.editMessageText(
-          `❌ Invalid option number. Please choose between 1 and ${pollData.options.length}.`,
+          '❌ That poll option is no longer available. Please forward the poll again.',
         );
         return;
       }
 
       // Extract usernames from selected option
-      const voters = pollData.votes.get(optionIndex) || new Set();
+      const voters = pollData.votes.get(selectedOption.id) || new Set();
       const usernames = Array.from(voters);
 
       if (usernames.length === 0) {
@@ -196,7 +190,7 @@ export function registerCallbackHandlers(bot: Bot<MyContext>): void {
       ctx.session.pollQuestion = undefined;
 
       await ctx.editMessageText(
-        `✅ Selected option: "${pollData.options[optionIndex]}"\n` +
+        `✅ Selected option: "${selectedOption.text}"\n` +
           `👥 Attending players: ${usernames.join(' ')}`,
       );
 

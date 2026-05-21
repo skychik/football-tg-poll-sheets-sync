@@ -2,7 +2,11 @@ import { Bot, session } from 'grammy';
 import { registerCommands } from './commands';
 import { registerMessageHandlers } from './handlers';
 import { registerCallbackHandlers } from './handlers/callback-handlers';
-import { registerPollAnswerHandler, registerPollCommand } from './poll';
+import {
+  registerPollAnswerHandler,
+  registerPollCommand,
+  registerPollUpdateHandler,
+} from './poll';
 import { ensureRedisReady } from './redis';
 import type { MyContext, SessionData } from './session';
 
@@ -38,6 +42,7 @@ bot.use(
 );
 
 // Register all handlers
+registerPollUpdateHandler(bot);
 registerCommands(bot);
 registerPollCommand(bot);
 registerPollAnswerHandler(bot);

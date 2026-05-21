@@ -1,8 +1,13 @@
 import Redis from 'ioredis';
 
+export interface StoredPollOption {
+  id: string;
+  text: string;
+}
+
 export interface StoredPollData {
   question: string;
-  options: string[];
+  options: string[] | StoredPollOption[];
   votes: Record<string, string[]>;
 }
 

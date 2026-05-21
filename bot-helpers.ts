@@ -1,5 +1,10 @@
 import { ERR_SESSION_DATA_LOST } from './constants';
-import { getPollById, type PollData } from './poll';
+import {
+  getPollById,
+  getPollOptionById,
+  type PollData,
+  type PollOptionData,
+} from './poll';
 import { type MyContext, resetSession } from './session';
 
 /**
@@ -72,10 +77,30 @@ export async function requireSessionFields(
 export function buildPollOptionsText(pollData: PollData): string {
   let optionsText = '';
   pollData.options.forEach((option, index) => {
-    const voters = pollData.votes.get(index) || new Set();
-    optionsText += `${index + 1}. ${option} (${voters.size} vote${voters.size !== 1 ? 's' : ''})\n`;
+    const voters = pollData.votes.get(option.id) || new Set();
+    optionsText += `${index + 1}. ${option.text} (${voters.size} vote${voters.size !== 1 ? 's' : ''})\n`;
   });
   return optionsText;
+}
+
+export function getPollOptionVoters(
+  pollData: PollData,
+  option: PollOptionData,
+): Set<string> {
+  return pollData.votes.get(option.id) || new Set();
+}
+
+export function buildPollVotersText(pollData: PollData): string {
+  let response = `📊 Poll: "${pollData.question}"\n\n`;
+
+  pollData.options.forEach((option, index) => {
+    const normalizedOption = getPollOptionById(pollData, option.id) || option;
+    const voters = getPollOptionVoters(pollData, normalizedOption);
+    const voterList = Array.from(voters).join(' ');
+    response += `${index + 1}. ${normalizedOption.text}: ${voterList || '(no votes)'}\n`;
+  });
+
+  return response;
 }
 
 /**

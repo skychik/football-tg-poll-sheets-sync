@@ -1,42 +1,206 @@
 import type { Bot } from 'grammy';
 import {
   getPollData as getStoredPollData,
+  type StoredPollData,
+  type StoredPollOption,
   savePollData,
-  updatePollVotes,
 } from './redis';
 import type { MyContext } from './session';
+
+const LEGACY_OPTION_ID_PREFIX = 'legacy:';
+const GENERATED_OPTION_ID_PREFIX = 'generated:';
+
+interface TelegramPollOption {
+  text: string;
+  persistent_id?: string;
+}
+
+interface TelegramPoll {
+  id: string;
+  question: string;
+  options?: TelegramPollOption[];
+}
+
+interface TelegramPollAnswerUser {
+  id: number;
+  username?: string;
+}
+
+interface TelegramPollAnswer {
+  poll_id: string;
+  user?: TelegramPollAnswerUser;
+  option_ids?: number[];
+  option_persistent_ids?: string[];
+}
+
+export interface PollOptionData {
+  id: string;
+  text: string;
+}
 
 /**
  * Poll data storage for tracking votes
  */
 export interface PollData {
   question: string;
-  options: string[];
-  votes: Map<number, Set<string>>; // optionIndex -> Set of @usernames
+  options: PollOptionData[];
+  votes: Map<string, Set<string>>; // optionId -> Set of @usernames
+}
+
+function buildLegacyOptionId(index: number): string {
+  return `${LEGACY_OPTION_ID_PREFIX}${index}`;
+}
+
+function isLegacyNumericVoteKey(key: string): boolean {
+  return /^\d+$/.test(key);
+}
+
+function createGeneratedOptionId(index: number, text: string): string {
+  return `${GENERATED_OPTION_ID_PREFIX}${index}:${encodeURIComponent(text)}`;
+}
+
+function deserializeOptions(
+  options: StoredPollData['options'],
+): PollOptionData[] {
+  if (options.length === 0) {
+    return [];
+  }
+
+  if (typeof options[0] === 'string') {
+    return (options as string[]).map((text, index) => ({
+      id: buildLegacyOptionId(index),
+      text,
+    }));
+  }
+
+  return (options as StoredPollOption[]).map((option, index) => ({
+    id: option.id || createGeneratedOptionId(index, option.text),
+    text: option.text,
+  }));
 }
 
 function serializeVotes(
-  votes: Map<number, Set<string>>,
+  votes: Map<string, Set<string>>,
 ): Record<string, string[]> {
   const serializedVotes: Record<string, string[]> = {};
 
-  for (const [optionIndex, voters] of votes.entries()) {
-    serializedVotes[String(optionIndex)] = Array.from(voters);
+  for (const [optionId, voters] of votes.entries()) {
+    serializedVotes[optionId] = Array.from(voters);
   }
 
   return serializedVotes;
 }
 
 function deserializeVotes(
+  options: StoredPollData['options'],
   serializedVotes: Record<string, string[]>,
-): Map<number, Set<string>> {
-  const votes = new Map<number, Set<string>>();
+): Map<string, Set<string>> {
+  const votes = new Map<string, Set<string>>();
+  const usesLegacyOptions =
+    options.length > 0 && typeof options[0] === 'string';
 
   for (const [optionIndex, voters] of Object.entries(serializedVotes)) {
-    votes.set(Number(optionIndex), new Set(voters));
+    const optionId =
+      usesLegacyOptions && isLegacyNumericVoteKey(optionIndex)
+        ? buildLegacyOptionId(Number(optionIndex))
+        : optionIndex;
+    votes.set(optionId, new Set(voters));
   }
 
   return votes;
+}
+
+function serializePollData(pollData: PollData): StoredPollData {
+  return {
+    question: pollData.question,
+    options: pollData.options.map((option) => ({
+      id: option.id,
+      text: option.text,
+    })),
+    votes: serializeVotes(pollData.votes),
+  };
+}
+
+async function persistPollData(
+  pollId: string,
+  pollData: PollData,
+): Promise<void> {
+  await savePollData(pollId, serializePollData(pollData));
+}
+
+function buildPollOptionsFromTelegram(
+  telegramOptions: TelegramPollOption[] | undefined,
+  fallbackOptions: string[],
+): PollOptionData[] {
+  if (!telegramOptions || telegramOptions.length === 0) {
+    return fallbackOptions.map((text, index) => ({
+      id: buildLegacyOptionId(index),
+      text,
+    }));
+  }
+
+  return telegramOptions.map((option, index) => ({
+    id: option.persistent_id || createGeneratedOptionId(index, option.text),
+    text: option.text,
+  }));
+}
+
+function getSelectedOptionIds(
+  pollData: PollData,
+  pollAnswer: TelegramPollAnswer,
+): string[] {
+  if (
+    pollAnswer.option_persistent_ids &&
+    pollAnswer.option_persistent_ids.length > 0
+  ) {
+    return pollAnswer.option_persistent_ids.filter(
+      (optionId) => optionId.length > 0,
+    );
+  }
+
+  return (pollAnswer.option_ids || [])
+    .map((optionIndex) => pollData.options[optionIndex]?.id)
+    .filter((optionId): optionId is string => Boolean(optionId));
+}
+
+function getOptionText(pollData: PollData, optionId: string): string {
+  return (
+    pollData.options.find((option) => option.id === optionId)?.text || optionId
+  );
+}
+
+function upsertOption(pollData: PollData, option: PollOptionData): void {
+  const existingIndex = pollData.options.findIndex(
+    (existingOption) => existingOption.id === option.id,
+  );
+
+  if (existingIndex === -1) {
+    pollData.options.push(option);
+    return;
+  }
+
+  pollData.options[existingIndex] = option;
+}
+
+async function syncPollDefinition(telegramPoll: TelegramPoll): Promise<void> {
+  const pollData = await getPollById(telegramPoll.id);
+  if (!pollData || !telegramPoll.options || telegramPoll.options.length === 0) {
+    return;
+  }
+
+  const updatedOptions = buildPollOptionsFromTelegram(telegramPoll.options, []);
+  const knownOptionIds = new Set(updatedOptions.map((option) => option.id));
+
+  for (const option of pollData.options) {
+    if (!knownOptionIds.has(option.id)) {
+      updatedOptions.push(option);
+    }
+  }
+
+  pollData.question = telegramPoll.question || pollData.question;
+  pollData.options = updatedOptions;
+
+  await persistPollData(telegramPoll.id, pollData);
 }
 
 export async function getPollById(pollId: string): Promise<PollData | null> {
@@ -47,9 +211,28 @@ export async function getPollById(pollId: string): Promise<PollData | null> {
 
   return {
     question: storedPollData.question,
-    options: storedPollData.options,
-    votes: deserializeVotes(storedPollData.votes),
+    options: deserializeOptions(storedPollData.options),
+    votes: deserializeVotes(storedPollData.options, storedPollData.votes),
   };
+}
+
+export function getPollOptionById(
+  pollData: PollData,
+  optionId: string,
+): PollOptionData | undefined {
+  return pollData.options.find((option) => option.id === optionId);
+}
+
+export function getPollOptionByNumber(
+  pollData: PollData,
+  optionNumber: number,
+): PollOptionData | undefined {
+  const optionIndex = optionNumber - 1;
+  if (optionIndex < 0 || optionIndex >= pollData.options.length) {
+    return undefined;
+  }
+
+  return pollData.options[optionIndex];
 }
 
 /**
@@ -98,23 +281,25 @@ export function registerPollCommand(bot: Bot<MyContext>): void {
 
     try {
       // Create non-anonymous poll
-      const pollMessage = await ctx.api.sendPoll(
-        ctx.chat.id,
-        question,
-        options,
-        {
-          is_anonymous: false,
-          allows_multiple_answers: true,
-        },
-      );
+      const sendPoll = ctx.api.sendPoll as (
+        ...args: unknown[]
+      ) => Promise<{ poll?: TelegramPoll }>;
+      const pollMessage = await sendPoll(ctx.chat.id, question, options, {
+        is_anonymous: false,
+        allows_multiple_answers: true,
+        allow_adding_options: true,
+      });
 
       // Store poll data
       const pollId = pollMessage.poll?.id;
       if (pollId) {
-        await savePollData(pollId, {
+        await persistPollData(pollId, {
           question,
-          options,
-          votes: {},
+          options: buildPollOptionsFromTelegram(
+            pollMessage.poll?.options,
+            options,
+          ),
+          votes: new Map(),
         });
         console.log(
           `[POLL CREATED] Poll ID: ${pollId}, Question: "${question}", Options: ${options.join(', ')}, Chat ID: ${ctx.chat.id}, User: @${ctx.from?.username || 'unknown'}`,
@@ -145,6 +330,18 @@ export function registerPollCommand(bot: Bot<MyContext>): void {
   });
 }
 
+export function registerPollUpdateHandler(bot: Bot<MyContext>): void {
+  bot.use(async (ctx, next) => {
+    const telegramPoll = (ctx.update as { poll?: TelegramPoll }).poll;
+    if (telegramPoll) {
+      await syncPollDefinition(telegramPoll);
+      return;
+    }
+
+    await next();
+  });
+}
+
 /**
  * Register poll answer handler
  */
@@ -155,7 +352,7 @@ export function registerPollAnswerHandler(bot: Bot<MyContext>): void {
   bot.on('poll_answer', async (ctx) => {
     console.log('[POLL ANSWER HANDLER] Received poll_answer event');
 
-    const pollAnswer = ctx.pollAnswer;
+    const pollAnswer = ctx.pollAnswer as TelegramPollAnswer | undefined;
     console.log(
       '[POLL ANSWER HANDLER] pollAnswer:',
       JSON.stringify(pollAnswer, null, 2),
@@ -179,11 +376,14 @@ export function registerPollAnswerHandler(bot: Bot<MyContext>): void {
 
     console.log(`[POLL ANSWER HANDLER] Found poll data for ID ${pollId}:`, {
       question: pollData.question,
-      options: pollData.options,
+      options: pollData.options.map((option) => ({
+        id: option.id,
+        text: option.text,
+      })),
       currentVotes: Array.from(pollData.votes.entries()).map(
         ([id, voters]) => ({
           optionId: id,
-          optionText: pollData.options[id],
+          optionText: getOptionText(pollData, id),
           voters: Array.from(voters),
         }),
       ),
@@ -226,36 +426,44 @@ export function registerPollAnswerHandler(bot: Bot<MyContext>): void {
     console.log(
       '[POLL ANSWER HANDLER] Removing user from all options before adding to new ones',
     );
-    pollData.votes.forEach((voters, optionId) => {
+    pollData.votes.forEach((voters, optionId: string) => {
       const hadUser = voters.has(usernameWithAt);
       voters.delete(usernameWithAt);
       if (hadUser) {
         console.log(
-          `[POLL ANSWER HANDLER] Removed ${usernameWithAt} from option ${optionId} (${pollData.options[optionId]})`,
+          `[POLL ANSWER HANDLER] Removed ${usernameWithAt} from option ${optionId} (${getOptionText(pollData, optionId)})`,
         );
       }
     });
 
     // Add user to selected options
-    console.log('[POLL ANSWER HANDLER] Option IDs:', pollAnswer.option_ids);
-    if (pollAnswer.option_ids && pollAnswer.option_ids.length > 0) {
-      const selectedOptions = pollAnswer.option_ids.map(
-        (id) => pollData.options[id] || `Option ${id}`,
+    const selectedOptionIds = getSelectedOptionIds(pollData, pollAnswer);
+    console.log('[POLL ANSWER HANDLER] Option IDs:', selectedOptionIds);
+    if (selectedOptionIds.length > 0) {
+      const selectedOptions = selectedOptionIds.map((optionId) =>
+        getOptionText(pollData, optionId),
       );
       console.log(
         `[POLL ANSWER] Poll ID: ${pollId}, User: ${usernameWithAt}, Selected: ${selectedOptions.join(', ')}, Question: "${pollData.question}"`,
       );
 
-      for (const optionId of pollAnswer.option_ids) {
+      for (const optionId of selectedOptionIds) {
+        if (!getPollOptionById(pollData, optionId)) {
+          upsertOption(pollData, {
+            id: optionId,
+            text: `Added option (${optionId})`,
+          });
+        }
+
         if (!pollData.votes.has(optionId)) {
           pollData.votes.set(optionId, new Set());
           console.log(
-            `[POLL ANSWER HANDLER] Created new vote set for option ${optionId} (${pollData.options[optionId]})`,
+            `[POLL ANSWER HANDLER] Created new vote set for option ${optionId} (${getOptionText(pollData, optionId)})`,
           );
         }
         pollData.votes.get(optionId)?.add(usernameWithAt);
         console.log(
-          `[POLL ANSWER HANDLER] Added ${usernameWithAt} to option ${optionId} (${pollData.options[optionId]})`,
+          `[POLL ANSWER HANDLER] Added ${usernameWithAt} to option ${optionId} (${getOptionText(pollData, optionId)})`,
         );
       }
 
@@ -264,7 +472,7 @@ export function registerPollAnswerHandler(bot: Bot<MyContext>): void {
         '[POLL ANSWER HANDLER] Final vote state:',
         Array.from(pollData.votes.entries()).map(([id, voters]) => ({
           optionId: id,
-          optionText: pollData.options[id],
+          optionText: getOptionText(pollData, id),
           voters: Array.from(voters),
         })),
       );
@@ -274,6 +482,6 @@ export function registerPollAnswerHandler(bot: Bot<MyContext>): void {
       );
     }
 
-    await updatePollVotes(pollId, serializeVotes(pollData.votes));
+    await persistPollData(pollId, pollData);
   });
 }

@@ -1,4 +1,5 @@
 import { InlineKeyboard } from 'grammy';
+import type { PollData } from './poll';
 
 /**
  * Inline keyboard utilities for the bot
@@ -108,18 +109,15 @@ export function pollIntentKeyboard(): InlineKeyboard {
 /**
  * Creates poll option selection keyboard
  */
-export function pollOptionKeyboard(
-  options: string[],
-  votes: Map<number, Set<string>>,
-): InlineKeyboard {
+export function pollOptionKeyboard(pollData: PollData): InlineKeyboard {
   const keyboard = new InlineKeyboard();
-  options.forEach((option, index) => {
-    const voterCount = votes.get(index)?.size || 0;
+  pollData.options.forEach((option, index) => {
+    const voterCount = pollData.votes.get(option.id)?.size || 0;
     keyboard.text(
-      `${index + 1}. ${option} (${voterCount})`,
-      `${CallbackPrefix.POLL_OPTION}${index}`,
+      `${index + 1}. ${option.text} (${voterCount})`,
+      `${CallbackPrefix.POLL_OPTION}${encodeURIComponent(option.id)}`,
     );
-    if (index < options.length - 1) {
+    if (index < pollData.options.length - 1) {
       keyboard.row();
     }
   });
