@@ -47,7 +47,7 @@ export async function handleRegisterCommand(
     if (existingRow !== null) {
       await replyMarkdownV2(
         ctx,
-        `You are already in the table: *${escapeMarkdownV2(atTg)}* at row *${existingRow}*\\.`,
+        `You are already in the roster: *${escapeMarkdownV2(atTg)}* at row *${existingRow}*\\.`,
       );
       return;
     }
@@ -100,7 +100,7 @@ export async function doRegisterUser(
     if (registration.status === 'exists') {
       await replyMarkdownV2(
         ctx,
-        `You are already in the table: *${escapeMarkdownV2(atTg)}* at row *${registration.row}*\\.`,
+        `You are already in the roster: *${escapeMarkdownV2(atTg)}* at row *${registration.row}*\\.`,
       );
       if (mode === 'from_money') {
         await showMoneyColumnChoice(ctx);

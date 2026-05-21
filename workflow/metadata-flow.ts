@@ -1,5 +1,6 @@
 import { handleApiError, replyErrorAndReset } from '../bot-helpers';
 import { ERR_TARGET_COLUMN_NOT_SET } from '../constants';
+import { startPollAttendanceCount } from '../flows/poll-reconciliation';
 import type { MyContext } from '../session';
 import { escapeMarkdownV2, replyMarkdownV2 } from '../telegram/markdown-v2';
 import { proceedWithPlayerCountCheck } from './player-count-flow';
@@ -45,18 +46,22 @@ export async function proceedWithMetadataCollection(
     }
     ctx.session.cost = metadata.cost;
 
-    // Store player count if it exists, but don't ask for it yet
+    // Store attendance count if it exists, but don't ask for it yet
     if (metadata.playerCount !== undefined) {
       ctx.session.playerCount = metadata.playerCount;
     }
 
     // Check if usernames are already set (from poll)
     if (ctx.session.usernames && ctx.session.usernames.length > 0) {
+      if (ctx.session.pollReconciliationActive) {
+        await startPollAttendanceCount(ctx);
+        return;
+      }
       await proceedWithPlayerCountCheck(ctx);
       return;
     }
 
-    // All metadata complete, ask for usernames
+    // All metadata complete, ask for Telegram usernames
     ctx.session.state = 'awaiting_usernames';
     const tc3 = escapeMarkdownV2(ctx.session.targetColumn);
     const dn = escapeMarkdownV2(ctx.session.dateName ?? '');
@@ -68,7 +73,7 @@ export async function proceedWithMetadataCollection(
     if (ctx.session.playerCount !== undefined) {
       metadataMsg += `• *Players:* ${escapeMarkdownV2(String(ctx.session.playerCount))}\n`;
     }
-    metadataMsg += `\nNow send the list of *usernames* who will attend \\(with or without @, separated by spaces or commas\\):`;
+    metadataMsg += `\nNow send the list of *Telegram usernames* for attendees \\(with or without @, separated by spaces or commas\\):`;
     await replyMarkdownV2(ctx, metadataMsg);
   } catch (error) {
     await handleApiError(ctx, error, 'checking column metadata');

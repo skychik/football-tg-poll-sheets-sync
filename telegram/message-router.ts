@@ -11,6 +11,12 @@ import {
   tryHandleBareMoneyNumber,
   tryHandleMoneyBlockedPlainText,
 } from '../flows/money-flow';
+import {
+  handleNewAttendeeInput,
+  handlePollAttendanceCount,
+  handlePollMissingQuery,
+  handlePollNoShowReviewText,
+} from '../flows/poll-reconciliation';
 import { handleAwaitingRegisterName } from '../flows/register-user';
 import {
   handleOverrideConfirmation,
@@ -38,6 +44,10 @@ export function registerMessageRouter(bot: Bot<MyContext>): void {
 
     if (await handlePollIntent(ctx, text)) return;
     if (await handlePollOptionSelection(ctx, rawText)) return;
+    if (await handlePollAttendanceCount(ctx, rawText)) return;
+    if (await handlePollNoShowReviewText(ctx)) return;
+    if (await handlePollMissingQuery(ctx, rawText)) return;
+    if (await handleNewAttendeeInput(ctx, rawText)) return;
 
     if (ctx.chat.type !== 'private') return;
 

@@ -14,7 +14,7 @@ import {
 } from './update-write-actions';
 
 /**
- * Parse usernames from text input
+ * Parse Telegram usernames from text input
  * Handles formats like: @user1 @user2, user1, user2, user1;user2, or one per line
  * Supports separators: spaces, commas, semicolons, newlines
  */
@@ -53,7 +53,7 @@ export async function handleUsernames(
   if (usernames.length === 0) {
     await replyMarkdownV2(
       ctx,
-      '❌ Failed to recognize usernames\\. Try again or use */help*\\.',
+      '❌ Failed to recognize Telegram usernames\\. Try again or use */help*\\.',
     );
     return true;
   }
@@ -120,7 +120,7 @@ export async function handlePlayerCount(
   if (Number.isNaN(count) || count < 0) {
     await replyMarkdownV2(
       ctx,
-      '❌ Please provide a *valid positive integer* for the player count\\.',
+      '❌ Please provide a *valid positive integer* for the attendance count\\.',
     );
     return true;
   }
@@ -136,7 +136,7 @@ export async function handlePlayerCount(
   await persistPlayerCountToSheetAndCheckOverrides(
     ctx,
     nicknameRows,
-    'writing player count',
+    'writing attendance count',
   );
 
   return true;

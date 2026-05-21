@@ -34,9 +34,9 @@ export function registerCommands(
       `👋 *Welcome* to *Football Poll Sheets Sync Bot*\\!\n\n` +
         `📖 *Commands:*\n` +
         `• */poll* — Create a trackable poll\n` +
-        `• */update* — Update Google Sheet with attending players\n` +
+        `• */update* — Update Google Sheet with attendees\n` +
         `• */money* — Record a payment in the sheet \\(replaces your cell\\)\n` +
-        `• */register* — Add yourself to the table \\(A: name, B: @username\\)\n` +
+        `• */register* — Add yourself to the roster \\(A: name, B: @username\\)\n` +
         `• */help* — Show this help\n` +
         `• */cancel* or */abort* — Cancel current operation\n\n` +
         `💡 *Tip:* Forward a poll created by this bot to see voters or update the sheet\\!`,
@@ -47,9 +47,9 @@ export function registerCommands(
     await replyMarkdownV2(
       ctx,
       `📖 *Help:*\n\n` +
-        `• */update* — Update Google Sheet with attending players\n` +
+        `• */update* — Update Google Sheet with attendees\n` +
         `• */poll* — Create a trackable poll\\. Forward it here to start */update*\n` +
-        `• */register* — Add yourself: name in column A, @username in column B\n` +
+        `• */register* — Add yourself to the roster: name in column A, @username in column B\n` +
         `• */money* — Record a payment \\(private chat; you can also send 1–20000 as a number\\)\n` +
         `• */cancel* or */abort* — Cancel current operation\n` +
         `• */help* — Show this help\n\n` +

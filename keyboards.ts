@@ -10,6 +10,7 @@ export const CallbackPrefix = {
   COLUMN: 'col:',
   POLL_INTENT: 'pi:',
   POLL_OPTION: 'po:',
+  PLAYER: 'pl:',
   MONEY: 'mn:',
 } as const;
 

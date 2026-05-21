@@ -4,6 +4,7 @@ export type SheetsStub = SheetsClient;
 
 export function baseSheets(overrides: Partial<SheetsStub> = {}): SheetsStub {
   const base: SheetsStub = {
+    listPlayers: async () => [],
     findLastDateColumn: async () => null,
     findColumnByDateText: async () => ({ success: false, error: 'not_found' }),
     findNicknameRows: async () => new Map(),

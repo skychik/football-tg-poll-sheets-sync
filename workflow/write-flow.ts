@@ -24,7 +24,7 @@ async function notifySheetUpdateFailure(
 
 /**
  * Check for existing values and either write directly or ask for override confirmation
- * Shared logic between player count confirmation and direct write flows
+ * Shared logic between attendance count confirmation and direct write flows
  */
 export async function checkOverridesAndWrite(
   ctx: MyContext,

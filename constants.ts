@@ -12,10 +12,10 @@ export const MSG_USE_UPDATE_AGAIN = 'Use /update to begin again\\.';
 export const SHEET_NAME = 'Sheet1';
 export const SHEET_DATA_FIRST_ROW = 7; // Data starts from row 7
 export const SHEET_DATA_FIRST_COLUMN = 'F'; // Date columns start from column F
-export const SHEET_NICKNAME_COLUMN = 'B'; // Column B contains Telegram nicknames
+export const SHEET_NICKNAME_COLUMN = 'B'; // Column B contains Telegram usernames
 export const SHEET_DATE_ROW = 1; // Row 1 contains date
 export const SHEET_COST_ROW = 2; // Row 2 contains cost
-export const SHEET_PLAYER_COUNT_ROW = 3; // Row 3 contains player count
+export const SHEET_PLAYER_COUNT_ROW = 3; // Row 3 contains attendance count
 export const SHEET_EXCLUDE_COLUMN_PATTERN = /^баланс\s+/i; // Exclude columns starting with "Баланс "
 
 // Player registry (columns A and B) and per-column "remaining" row
@@ -42,4 +42,5 @@ export const ERR_MONEY_SESSION_LOST_RESTART =
   '*Session lost\\.* Start again with */money* or send a number\\.';
 export const ERR_MONEY_BUTTON_OUTDATED =
   'This button is *out of date*\\. Use */money* again\\.';
-export const MSG_ASK_PLAYER_COUNT = '*How many players* attended the match?';
+export const MSG_ASK_PLAYER_COUNT =
+  '*What was the attendance count* for the match?';

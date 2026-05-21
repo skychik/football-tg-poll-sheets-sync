@@ -6,15 +6,15 @@ import {
 } from '../workflow/write-flow';
 
 /**
- * Persist player count to the sheet and continue to override / write.
+ * Persist attendance count to the sheet and continue to override / write.
  * Caller must set `ctx.session.playerCount` and `ctx.session.targetColumn`.
  */
 export async function persistPlayerCountToSheetAndCheckOverrides(
   ctx: MyContext,
   nicknameRows: Map<string, number>,
   apiErrorAction:
-    | 'writing player count or checking overrides'
-    | 'writing player count' = 'writing player count or checking overrides',
+    | 'writing attendance count or checking overrides'
+    | 'writing attendance count' = 'writing attendance count or checking overrides',
 ): Promise<void> {
   const targetColumn = ctx.session.targetColumn;
   if (!targetColumn) {

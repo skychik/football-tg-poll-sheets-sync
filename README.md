@@ -1,6 +1,6 @@
 # Football Telegram Poll to Google Sheets Sync Bot
 
-Telegram bot that tracks poll voters and syncs attendee data to Google Sheets.
+Telegram bot that tracks poll voters and syncs match attendance data to Google Sheets.
 It supports both manual updates and poll-driven updates. With **`REDIS_URL`** set, poll state is stored in Redis so data survives restarts; in development you can omit **`REDIS_URL`** and the bot uses in-memory storage instead (see **Setup**).
 
 ## Features
@@ -9,7 +9,7 @@ It supports both manual updates and poll-driven updates. With **`REDIS_URL`** se
 - Track live voter changes via Telegram `poll_answer` updates
 - Persist poll state in Redis when **`REDIS_URL`** is set (`poll:{pollId}`), or in-memory when it is not (development fallback) / when **`POLL_STORAGE=memory`** is set
 - Forward poll messages back to the bot to extract voters
-- Continue to column/date/cost/player-count workflow for Google Sheets updates
+- Continue to match column/date/cost/attendance-count workflow for Google Sheets updates
 - Record payments with `/money` (or a plain number like `1` or `1.5`, up to `20000`, in private chat); `/register` adds your name and `@username` in columns A and B
 - Protect existing values with confirmation before overwrite
 
@@ -32,14 +32,14 @@ It supports both manual updates and poll-driven updates. With **`REDIS_URL`** se
 3. Choose:
   - `1` to update sheet
   - `2` to view voters
-4. If updating, select the option containing attendees
-5. Complete column/metadata prompts and write to sheet
+4. If updating, select the poll option containing attendees
+5. Complete match column/metadata prompts and write to the Google Sheet
 
 ## Spreadsheet structure
 
 - Column `A`: display names
 - Column `B`: Telegram usernames (for example `@almoga`)
-- Date columns start from `F` (row 1 date, 2 cost, 3 player count, 4 remaining); player payments are written in your row in the chosen date column
+- Match columns start from `F` (row 1 date, 2 cost, 3 attendance count, 4 remaining); player payments are written in your row in the chosen match column
 - Player rows start from `7`
 
 Adjust constants in `constants.ts` if your sheet layout differs.
@@ -47,16 +47,21 @@ Adjust constants in `constants.ts` if your sheet layout differs.
 ## Bot Conversation Flow
 
 The bot supports two entry points: `/update` (manual) and forwarded poll (poll-based).
+Poll-based updates include a reconciliation step: after selecting the attendee
+poll option, the bot asks the real attendance count, lets you remove no-shows who
+did not play, then helps resolve missing attendees by searching the roster or
+adding a new player with a name and optional Telegram username.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> DetectColumn: /update or poll forwarded
+    [*] --> DetectColumn: /update
+    [*] --> ForwardPoll: poll forwarded
 
     state PollFlow {
         ForwardPoll --> AskPollIntent: Poll recognized
         AskPollIntent --> ViewVoters: User chooses "2"
         AskPollIntent --> SelectOption: User chooses "1"
-        SelectOption --> DetectColumn: Usernames extracted
+        SelectOption --> DetectColumn: Attendee option selected
         ViewVoters --> [*]: Show voters and reset
     }
 
@@ -74,7 +79,8 @@ stateDiagram-v2
 
         CheckMetadata --> AskDateName: Date missing
         CheckMetadata --> AskCost: Cost missing
-        CheckMetadata --> AskUsernames: Metadata complete
+        CheckMetadata --> AskUsernames: Manual metadata complete
+        CheckMetadata --> AskRealCount: Poll metadata complete
         AskDateName --> CheckMetadata: Date saved
         AskCost --> CheckMetadata: Cost saved
 
@@ -85,11 +91,55 @@ stateDiagram-v2
         ConfirmPlayerCount --> CheckOverride: User confirms
         AskPlayerCount --> CheckOverride: Count saved
 
+        AskRealCount --> RemoveNoShows: Count saved or overwritten
+        RemoveNoShows --> ResolveMissing: Missing attendees remain
+        RemoveNoShows --> CheckOverride: No missing attendees
+
+        ResolveMissing --> SearchRoster: Search Roster
+        ResolveMissing --> CreatePlayer: Create Player immediately
+        SearchRoster --> PickExisting: Matches found
+        SearchRoster --> NoMatches: No matches found
+        NoMatches --> SearchRoster: Try another query
+        NoMatches --> CreatePlayer: Create Player in Roster
+        PickExisting --> ConfirmExisting: Pick a result
+        PickExisting --> SearchRoster: Try another query
+        PickExisting --> CreatePlayer: Create Player instead
+        ConfirmExisting --> ResolveMissing: Confirmed, more missing
+        ConfirmExisting --> SearchRoster: Not this player
+        ConfirmExisting --> CheckOverride: Confirmed, all resolved
+        CreatePlayer --> ResolveMissing: Player created, more missing
+        CreatePlayer --> CheckOverride: Player created, all resolved
+
         CheckOverride --> ConfirmOverride: Conflicts found
         CheckOverride --> WriteData: No conflicts
         ConfirmOverride --> WriteData: User decides
         WriteData --> [*]: Done and reset
     }
+```
+
+### Player Creation Flow
+
+This subflow is used when Poll Reconciliation cannot match a Missing Attendee to
+an existing Player in the Roster, or when you choose to create a Player instead
+of selecting a search result.
+
+```mermaid
+stateDiagram-v2
+    [*] --> StartCreatePlayer: Create Player in Roster
+    StartCreatePlayer --> EnterPlayer: Ask for name and optional @username
+    EnterPlayer --> InvalidInput: Empty name or invalid @username
+    InvalidInput --> EnterPlayer: Try again
+    EnterPlayer --> ConfirmTelegram: Optional @username entered
+    EnterPlayer --> ConfirmNameOnly: No @username entered
+    ConfirmTelegram --> EnterPlayer: User edits
+    ConfirmNameOnly --> EnterPlayer: User edits
+    ConfirmTelegram --> SaveOrUseExisting: User confirms clickable @username
+    ConfirmNameOnly --> SavePlayer: User confirms name-only Player
+    SaveOrUseExisting --> ExistingTelegram: Telegram Username already in Roster
+    ExistingTelegram --> UseExistingRosterRow: Use existing Roster row
+    SaveOrUseExisting --> SavePlayer: Telegram Username is new
+    SavePlayer --> [*]: Player row created
+    UseExistingRosterRow --> [*]: No new Player created
 ```
 
 

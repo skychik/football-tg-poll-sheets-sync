@@ -82,10 +82,13 @@ describe('callback query handlers', () => {
     );
 
     expectTexts(calls, ['Selected column H'], 'editMessageText');
-    expectTexts(calls, ['Column H metadata', 'Now send the list of usernames']);
+    expectTexts(calls, [
+      'Column H metadata',
+      'Now send the list of Telegram usernames',
+    ]);
   });
 
-  test('yn:playercount:no asks for manual player count', async () => {
+  test('yn:playercount:no asks for manual attendance count', async () => {
     testKit.setSheetsClient(
       baseSheets({
         findLastDateColumn: async () => ({ column: 'F', date: '12 Apr' }),
@@ -108,7 +111,7 @@ describe('callback query handlers', () => {
 
     expectTexts(
       calls,
-      ['How many players attended the match?'],
+      ['What was the attendance count for the match?'],
       'editMessageText',
     );
   });
@@ -241,7 +244,7 @@ describe('callback query handlers', () => {
       callbackQueryUpdate('pi:update', intentMsg as Message),
     );
 
-    expectTexts(calls, ['Which option contains the attending players']);
+    expectTexts(calls, ['Which option contains the attendees']);
   });
 
   test('poll intent pi:view shows voters and resets session', async () => {

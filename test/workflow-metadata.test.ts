@@ -73,7 +73,7 @@ describe('proceedWithMetadataCollection', () => {
     expect(msg).toContain('Column F metadata');
     expect(msg).toContain('Date: 12 Apr');
     expect(msg).toContain('Cost: 700');
-    expect(msg).toContain('Now send the list of usernames');
+    expect(msg).toContain('Now send the list of Telegram usernames');
   });
 
   test('includes sheet playerCount in summary when present', async () => {
@@ -132,7 +132,9 @@ describe('proceedWithMetadataCollection', () => {
 
     const normalized = replies.map(normalizeTelegramText);
     expect(normalized.some((r) => r.includes('Checking sheet'))).toBe(true);
-    expect(normalized.some((r) => r.includes('Is 1 the total'))).toBe(true);
+    expect(
+      normalized.some((r) => r.includes('Is 1 the attendance count')),
+    ).toBe(true);
     expect(ctx.session.state).toBe('awaiting_player_count_confirmation');
   });
 });

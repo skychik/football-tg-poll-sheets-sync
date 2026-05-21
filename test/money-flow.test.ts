@@ -166,7 +166,7 @@ describe('/money', () => {
     );
     const { bot, calls, getLastBotMessage } = setupTestBot();
     await bot.handleUpdate(textMessageUpdate('/money 300'));
-    expectTexts(calls, ['not in the table', 'name'], 'sendMessage');
+    expectTexts(calls, ['not in the roster', 'name'], 'sendMessage');
     await bot.handleUpdate(textMessageUpdate('Pavel'));
     expectTexts(calls, ['Added', 'Pavel', '300'], 'sendMessage');
     expect(getLastBotMessage()?.text).toMatch(/Where should I write/);
