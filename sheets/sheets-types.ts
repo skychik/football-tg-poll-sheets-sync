@@ -9,9 +9,16 @@ export interface ColumnMetadata {
   playerCount?: number;
 }
 
+export interface PlayerRosterEntry {
+  row: number;
+  name: string;
+  nickname?: string;
+}
+
 export type MoneyUserCellState = 'empty' | 'zero' | 'number';
 
 export interface SheetsClient {
+  listPlayers: () => Promise<PlayerRosterEntry[]>;
   findNicknameRows: (nicknames: string[]) => Promise<Map<string, number>>;
   checkExistingValues: (
     nicknameRows: Map<string, number>,
@@ -47,7 +54,7 @@ export interface SheetsClient {
   writeRegisterRow: (
     row: number,
     displayName: string,
-    atTg: string,
+    atTg?: string,
   ) => Promise<void>;
   getMoneyUserCellInfo: (params: {
     column: string;

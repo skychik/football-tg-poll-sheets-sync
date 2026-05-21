@@ -299,7 +299,7 @@ export async function handleCost(
     return true;
   }
 
-  // Continue to player count check
+  // Continue to attendance count check
   await proceedWithMetadataCollection(ctx);
   return true;
 }

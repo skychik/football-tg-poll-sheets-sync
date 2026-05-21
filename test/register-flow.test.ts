@@ -31,7 +31,7 @@ describe('/register', () => {
     );
     const { bot, calls } = setupTestBot();
     await bot.handleUpdate(textMessageUpdate('/register'));
-    expectTexts(calls, ['already in the table', '12'], 'sendMessage');
+    expectTexts(calls, ['already in the roster', '12'], 'sendMessage');
   });
 
   test('with name in command writes first empty row A/B', async () => {

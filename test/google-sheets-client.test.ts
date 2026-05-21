@@ -15,18 +15,20 @@ let currentValues: unknown[][] = [];
 const valuesGetMock = mock(async () => ({
   data: { values: currentValues },
 }));
+const valuesBatchUpdateMock = mock(async () => ({
+  data: {},
+}));
 
 const sheetsMock = mock(() => ({
   spreadsheets: {
     values: {
       get: valuesGetMock,
+      batchUpdate: valuesBatchUpdateMock,
     },
   },
 }));
 
-class MockJWT {
-  constructor(_opts: unknown) {}
-}
+class MockJWT {}
 
 const originalSheets = google.sheets;
 const originalJwt = google.auth.JWT;
@@ -36,6 +38,7 @@ let previousPrivateKey: string | undefined;
 
 function resetValuesGetMock(): void {
   (valuesGetMock as { mockClear?: () => void }).mockClear?.();
+  (valuesBatchUpdateMock as { mockClear?: () => void }).mockClear?.();
 }
 
 function restoreEnvVar(name: string, previousValue: string | undefined): void {
@@ -117,5 +120,44 @@ describe('createGoogleSheetsClient / findFirstRowWithEmptyNameAndTg', () => {
     const client = await createGoogleSheetsClient();
     const row = await client.findFirstRowWithEmptyNameAndTg();
     expect(row).toBe(SHEET_DATA_FIRST_ROW + 1);
+  });
+
+  test('listPlayers reads names and optional normalized nicknames', async () => {
+    currentValues = [
+      ['Alice', 'alice'],
+      ['Boris', '@boris'],
+      ['Name Only', ''],
+      ['', ''],
+    ];
+    const client = await createGoogleSheetsClient();
+    const players = await client.listPlayers();
+
+    expect(players).toEqual([
+      { row: SHEET_DATA_FIRST_ROW, name: 'Alice', nickname: '@alice' },
+      { row: SHEET_DATA_FIRST_ROW + 1, name: 'Boris', nickname: '@boris' },
+      { row: SHEET_DATA_FIRST_ROW + 2, name: 'Name Only' },
+    ]);
+  });
+
+  test('writeRegisterRow writes blank nickname when caller passes empty string', async () => {
+    const client = await createGoogleSheetsClient();
+    await client.writeRegisterRow(12, 'Name Only', '');
+
+    expect(valuesBatchUpdateMock).toHaveBeenCalledWith({
+      spreadsheetId: 'test-sheet-id',
+      requestBody: {
+        valueInputOption: 'RAW',
+        data: [
+          {
+            range: `'${SHEET_NAME}'!${SHEET_NAME_COLUMN}12`,
+            values: [['Name Only']],
+          },
+          {
+            range: `'${SHEET_NAME}'!${SHEET_NICKNAME_COLUMN}12`,
+            values: [['']],
+          },
+        ],
+      },
+    });
   });
 });

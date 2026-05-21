@@ -120,7 +120,7 @@ async function handlePlayerCountYes(ctx: MyContext): Promise<void> {
   const recognizedCount = nicknameRows.size;
   ctx.session.playerCount = recognizedCount;
 
-  await editMessageMarkdownV2(ctx, `Player count: *${recognizedCount}*`);
+  await editMessageMarkdownV2(ctx, `Attendance count: *${recognizedCount}*`);
 
   await persistPlayerCountToSheetAndCheckOverrides(ctx, nicknameRows);
 }

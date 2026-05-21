@@ -193,7 +193,7 @@ async function continueMoneyAfterAmount(
     const un = escapeMarkdownV2(ctx.from?.username ?? '');
     await replyMarkdownV2(
       ctx,
-      `You are *not in the table* yet, so I cannot find your row\\.\n\n` +
+      `You are *not in the roster* yet, so I cannot find your row\\.\n\n` +
         `Send the name to put in column *A* \\(I will add *@${un}* in column *B*\\)\\.`,
     );
   } catch (e) {

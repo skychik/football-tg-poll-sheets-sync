@@ -22,6 +22,7 @@ import type {
   ColumnMetadata,
   ExistingValue,
   MoneyUserCellState,
+  PlayerRosterEntry,
   SheetsClient,
 } from './sheets-types';
 
@@ -111,6 +112,34 @@ export async function createGoogleSheetsClient(): Promise<SheetsClient> {
   }
 
   const sheets = google.sheets({ version: 'v4', auth });
+
+  async function listPlayers(): Promise<PlayerRosterEntry[]> {
+    const range = `'${SHEET_NAME}'!${SHEET_NAME_COLUMN}${SHEET_DATA_FIRST_ROW}:${SHEET_NICKNAME_COLUMN}`;
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range,
+    });
+
+    const rows = response.data.values || [];
+    const players: PlayerRosterEntry[] = [];
+
+    rows.forEach((row, index) => {
+      const name = row[0] == null ? '' : String(row[0]).trim();
+      const nicknameRaw = row[1] == null ? '' : String(row[1]).trim();
+      if (!name && !nicknameRaw) return;
+
+      const nickname = nicknameRaw
+        ? `@${nicknameRaw.replace(/^@+/, '')}`
+        : undefined;
+      players.push({
+        row: SHEET_DATA_FIRST_ROW + index,
+        name,
+        nickname,
+      });
+    });
+
+    return players;
+  }
 
   async function findNicknameRows(
     nicknames: string[],
@@ -491,22 +520,26 @@ export async function createGoogleSheetsClient(): Promise<SheetsClient> {
   async function writeRegisterRow(
     row: number,
     displayName: string,
-    atTg: string,
+    atTg?: string,
   ): Promise<void> {
+    const data = [
+      {
+        range: `'${SHEET_NAME}'!${SHEET_NAME_COLUMN}${row}`,
+        values: [[displayName]],
+      },
+    ];
+    if (atTg !== undefined) {
+      data.push({
+        range: `'${SHEET_NAME}'!${SHEET_NICKNAME_COLUMN}${row}`,
+        values: [[atTg]],
+      });
+    }
+
     await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
         valueInputOption: 'RAW',
-        data: [
-          {
-            range: `'${SHEET_NAME}'!${SHEET_NAME_COLUMN}${row}`,
-            values: [[displayName]],
-          },
-          {
-            range: `'${SHEET_NAME}'!${SHEET_NICKNAME_COLUMN}${row}`,
-            values: [[atTg]],
-          },
-        ],
+        data,
       },
     });
   }
@@ -585,6 +618,7 @@ export async function createGoogleSheetsClient(): Promise<SheetsClient> {
   }
 
   return {
+    listPlayers,
     findNicknameRows,
     checkExistingValues,
     writeZeros,

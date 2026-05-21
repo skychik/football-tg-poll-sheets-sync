@@ -15,6 +15,10 @@ export interface SessionData {
     | 'awaiting_override_confirmation'
     | 'awaiting_poll_intent'
     | 'awaiting_poll_option_selection'
+    | 'awaiting_poll_attendance_count'
+    | 'awaiting_poll_no_show_review'
+    | 'awaiting_poll_missing_query'
+    | 'awaiting_new_attendee_input'
     | 'awaiting_money_amount'
     | 'awaiting_register_name'
     | 'awaiting_money_column_choice'
@@ -33,6 +37,21 @@ export interface SessionData {
   existingValuesEntries?: Array<{ nickname: string; value: string | number }>; // Store existing values for skipped tracking
   pollId?: string; // For poll-based workflow
   pollQuestion?: string; // For display
+  pollReconciliationActive?: boolean;
+  pollSelectedUsernames?: string[];
+  pollRemainingUsernames?: string[];
+  pollResolvedAttendeesEntries?: Array<[string, number]>;
+  pollRemovedUsernames?: string[];
+  pollRosterEntries?: Array<{ row: number; name: string; nickname?: string }>;
+  pollSearchResults?: Array<{ row: number; name: string; nickname?: string }>;
+  pollSearchPage?: number;
+  pollUnknownQueries?: string[];
+  pollPendingPlayer?: { row: number; name: string; nickname?: string };
+  pollExistingConfirmationSource?: 'search' | 'create';
+  pollPendingNewName?: string;
+  pollPendingNewNickname?: string;
+  pollPendingNewAttendees?: Array<{ name: string; nickname?: string }>;
+  pollCollectionMessageId?: number;
   columnMatches?: Array<{ column: string; date: string }>; // For column selection when multiple matches found
   /** /money: amount the user asked to write (replaces target cell) */
   moneyAmount?: number;
@@ -69,6 +88,21 @@ export function resetSession(session: SessionData): void {
   session.existingValuesEntries = undefined;
   session.pollId = undefined;
   session.pollQuestion = undefined;
+  session.pollReconciliationActive = undefined;
+  session.pollSelectedUsernames = undefined;
+  session.pollRemainingUsernames = undefined;
+  session.pollResolvedAttendeesEntries = undefined;
+  session.pollRemovedUsernames = undefined;
+  session.pollRosterEntries = undefined;
+  session.pollSearchResults = undefined;
+  session.pollSearchPage = undefined;
+  session.pollUnknownQueries = undefined;
+  session.pollPendingPlayer = undefined;
+  session.pollExistingConfirmationSource = undefined;
+  session.pollPendingNewName = undefined;
+  session.pollPendingNewNickname = undefined;
+  session.pollPendingNewAttendees = undefined;
+  session.pollCollectionMessageId = undefined;
   session.columnMatches = undefined;
   session.moneyAmount = undefined;
   session.moneyResumeAfterRegister = undefined;

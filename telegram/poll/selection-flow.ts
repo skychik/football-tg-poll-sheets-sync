@@ -48,8 +48,7 @@ export async function getPollDataOrError(
   return { pollId, pollData };
 }
 
-const OPTION_PROMPT_INTRO =
-  'Which option contains the *attending players*?\\.\n\n';
+const OPTION_PROMPT_INTRO = 'Which option contains the *attendees*?\\.\n\n';
 
 function messageForPollOptionPrompt(pollData: PollData): string {
   return OPTION_PROMPT_INTRO + buildPollOptionsText(pollData);
@@ -108,13 +107,16 @@ export async function applyPollOptionSelectionAndStartUpdate(
   }
 
   ctx.session.usernames = usernames;
+  ctx.session.pollReconciliationActive = true;
+  ctx.session.pollSelectedUsernames = usernames;
+  ctx.session.pollRemainingUsernames = usernames;
   ctx.session.pollId = undefined;
   ctx.session.pollQuestion = undefined;
 
   const optLabel = escapeMarkdownV2(pollData.options[optionIndex]);
   const players = usernames.map(escapeMarkdownV2).join(', ');
   await notify(
-    `*Selected option:* _${optLabel}_\n` + `👥 *Attending players:* ${players}`,
+    `*Selected option:* _${optLabel}_\n` + `👥 *Poll voters:* ${players}`,
   );
 
   await startColumnDetectionFlow(ctx);

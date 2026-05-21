@@ -22,9 +22,53 @@ async function notifySheetUpdateFailure(
   );
 }
 
+async function materializePendingPollNewAttendees(
+  ctx: MyContext,
+  nicknameRows: Map<string, number>,
+): Promise<Map<string, number>> {
+  const pending = ctx.session.pollPendingNewAttendees ?? [];
+  if (pending.length === 0) return nicknameRows;
+
+  const sheetsClient = await ctx.services.createSheetsClient();
+  const result = new Map(nicknameRows);
+
+  for (const attendee of pending) {
+    const label = attendee.nickname || attendee.name;
+    if (result.has(label)) continue;
+
+    if (attendee.nickname) {
+      const existingRow = await sheetsClient.findUserRowByTg(attendee.nickname);
+      if (existingRow !== null) {
+        result.set(attendee.nickname, existingRow);
+        continue;
+      }
+    }
+
+    const row = await sheetsClient.findFirstRowWithEmptyNameAndTg();
+    if (row === null) {
+      throw new Error(
+        'No free roster row: could not find a row with empty A and B from row 7',
+      );
+    }
+
+    await sheetsClient.writeRegisterRow(
+      row,
+      attendee.name,
+      attendee.nickname ?? '',
+    );
+    result.set(label, row);
+  }
+
+  ctx.session.pollPendingNewAttendees = undefined;
+  ctx.session.pollResolvedAttendeesEntries = Array.from(result.entries());
+  ctx.session.nicknameRowsEntries = Array.from(result.entries());
+  ctx.session.usernames = Array.from(result.keys());
+  return result;
+}
+
 /**
  * Check for existing values and either write directly or ask for override confirmation
- * Shared logic between player count confirmation and direct write flows
+ * Shared logic between attendance count confirmation and direct write flows
  */
 export async function checkOverridesAndWrite(
   ctx: MyContext,
@@ -82,14 +126,27 @@ export async function writeZerosAndRespond(
   await replyMarkdownV2(ctx, '⏳ *Updating sheet*\\.\\.\\.');
 
   try {
+    const finalNicknameRows = await materializePendingPollNewAttendees(
+      ctx,
+      nicknameRows,
+    );
     const sheetsClient = await ctx.services.createSheetsClient();
 
+    if (ctx.session.pollReconciliationActive && ctx.session.targetColumn) {
+      await sheetsClient.writeColumnMetadata(
+        ctx.session.targetColumn,
+        undefined,
+        undefined,
+        ctx.session.playerCount,
+      );
+    }
+
     console.log(
-      `[SHEET UPDATE] Column: ${column}, Users: ${Array.from(nicknameRows.keys()).join(', ')}, Override: ${overrideExisting}, Skipped: ${skippedNicknames.join(', ') || 'none'}, Chat ID: ${ctx.chat?.id || 'unknown'}, User: @${ctx.from?.username || 'unknown'}`,
+      `[SHEET UPDATE] Column: ${column}, Users: ${Array.from(finalNicknameRows.keys()).join(', ')}, Override: ${overrideExisting}, Skipped: ${skippedNicknames.join(', ') || 'none'}, Chat ID: ${ctx.chat?.id || 'unknown'}, User: @${ctx.from?.username || 'unknown'}`,
     );
 
     const result = await sheetsClient.writeZeros(
-      nicknameRows,
+      finalNicknameRows,
       column,
       overrideExisting,
     );
@@ -98,7 +155,7 @@ export async function writeZerosAndRespond(
       `[SHEET UPDATE COMPLETE] Column: ${column}, Updated: ${result.updated}, Not found: ${result.notFound.length}`,
     );
 
-    const allFoundNicknames = Array.from(nicknameRows.keys());
+    const allFoundNicknames = Array.from(finalNicknameRows.keys());
     const updatedNicknames = allFoundNicknames.filter(
       (n) => !skippedNicknames.includes(n),
     );
